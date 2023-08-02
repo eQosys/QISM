@@ -1,0 +1,166 @@
+\\ Usage: qism [options*] <input_file>
+\\
+\\ Options:
+\\   -h                  show this help message and exit
+\\   -o=<output_file>    output file name
+\\                        default: <input_file>.bin
+\\   -v                  verbose mode
+\\   -f=<format>         output format
+\\                        default: bin
+\\                        options: bintxt, hextxt
+
+\\ Registers:
+\\   zero                zero register
+\\   gp                  global pointer
+\\   sp                  stack pointer
+\\   bp                  base pointer
+\\   ra                  return address
+\\   r0-r10              general purpose registers
+
+\\ Instructions:
+\\   add [dest] [src1]* [src2]*
+\\   sub [dest] [src1]* [src2]*
+\\   and [dest] [src1]* [src2]*
+\\   or  [dest] [src1]* [src2]*
+\\   xor [dest] [src1]* [src2]*
+\\   jxx [addr]* [src]*
+\\   st
+\\   ld
+\\   lui [dest] [imm]
+\\   lli [dest] [imm]
+\\   li  [dest] [imm]
+\\
+\\  ++ '*' notates that one of these arguments may have an offset. Example:
+\\     add r0 r1 r2(4)
+\\
+\\  ++ 'xx' of 'jxx' is one of the following:
+\\     - '.z'    zero
+\\     - '.nz'   not zero
+\\     - '.gz'   greater than zero
+\\     - '.lz'   less than zero
+\\     - '.ge'   greater than or equal to zero
+\\     - '.le'   less than or equal to zero
+\\     Where '.' is either 'r' (relative jump) or '' (absolute jump).
+\\
+\\ Comments:
+\\   ~~ comment
+\\
+\\ Labels:
+\\  ::label
+\\
+\\ Entry Point:
+\\  .entry <label>
+
+import "memory.qnp"
+import "string.qnp"
+import "stdio.qnp"
+import "system.qnp"
+import "fileio.qnp"
+
+fn<std.String*> readFile(u8 const* filename):
+    var file = std.new(std.File, filename, "r")
+    if file == null:
+        return null
+
+    var size = file->size()
+
+    if size == std.limits.U64_MAX:
+        std.delete(file)
+        return null
+
+    var buffer = (u8*)std.malloc(size + 1)
+    if buffer == null:
+        std.delete(file)
+        return null
+
+    var nRead = file->read(buffer, size)
+    std.delete(file)
+    if nRead != size:
+        std.free(buffer)
+        return null
+    
+    buffer[size] = 0
+
+    var str = std.new(std.String, buffer)
+    if str == null:
+        std.free(buffer)
+        return null
+
+    return str
+
+fn<> printHelp():
+    std.println("Usage: qism [options*] <input_file>")
+
+enum OutputFormat:
+    bin, bintxt, hextxt
+
+var<std.String*> inputFilename = null
+var<std.String*> outputFilename = null
+var<OutputFormat> outputFormat = OutputFormat.bin
+var<bool> verbose = false
+
+var<u8* const*> argv
+var<u64> argc = std.getargs(&argv)
+
+var argi = 0
+while argv[++argi] != null:
+    var arg = std.new(std.String, (u8 const*)argv[argi])
+
+    if arg->equals("-h"):
+        printHelp()
+        std.delete(arg)
+        std.exit(0)
+    elif arg->beginswith("-o="):
+        outputFilename = std.new(std.String, arg->raw() + 3)
+        std.delete(arg)
+        continue
+    elif arg->equals("-v"):
+        verbose = true
+        std.delete(arg)
+        continue
+    elif arg->beginswith("-f="):
+        if arg->equals("-f=bin"):
+            outputFormat = OutputFormat.bin
+        elif arg->equals("-f=bintxt"):
+            outputFormat = OutputFormat.bintxt
+        elif arg->equals("-f=hextxt"):
+            outputFormat = OutputFormat.hextxt
+        else:
+            std.println("error: invalid output format!")
+            std.delete(arg)
+            std.exit(1)
+        std.delete(arg)
+        continue
+    
+    if inputFilename == null:
+        if argv[argi + 1] != null:
+            std.println("error: unrecognized option!")
+            std.delete(arg)
+            std.exit(1)
+
+        inputFilename = arg
+        continue
+
+    std.println("error: too many arguments!")
+    std.delete(arg)
+    std.exit(1)
+
+if inputFilename == null:
+    std.println("error: no input file!")
+    std.exit(1)
+
+if outputFilename == null:
+    outputFilename = std.new(std.String, inputFilename->raw())
+    outputFilename->append(".bin")
+
+
+\\ DO STUFF
+std.println("Selected options:")
+std.println("  Input file: %", inputFilename->raw())
+std.println("  Output file: %", outputFilename->raw())
+std.println("  Output format: %", (i64)outputFormat)
+std.println("  Verbose: %", verbose)
+
+std.delete(inputFilename)
+std.delete(outputFilename)
+std.exit(0)
