@@ -3,6 +3,40 @@ import "stdio.qnp"
 
 import "errorhandler.qnp"
 
+enum OpCode:
+    none,
+    add, sub,
+    and, or, xor,
+    jz, jnz, jgz, jlz, jge, jle,
+    jrz, jrnz, jrgz, jrlz, jrge, jrle,
+    st, ld,
+    lui, lli, li
+
+fn<OpCode> opCodeFromStr(std.String* str):
+    if str->equals("add"): return OpCode.add
+    if str->equals("sub"): return OpCode.sub
+    if str->equals("and"): return OpCode.and
+    if str->equals("or"): return OpCode.or
+    if str->equals("xor"): return OpCode.xor
+    if str->equals("jz"): return OpCode.jz
+    if str->equals("jnz"): return OpCode.jnz
+    if str->equals("jgz"): return OpCode.jgz
+    if str->equals("jlz"): return OpCode.jlz
+    if str->equals("jge"): return OpCode.jge
+    if str->equals("jle"): return OpCode.jle
+    if str->equals("jrz"): return OpCode.jrz
+    if str->equals("jrnz"): return OpCode.jrnz
+    if str->equals("jrgz"): return OpCode.jrgz
+    if str->equals("jrlz"): return OpCode.jrlz
+    if str->equals("jrge"): return OpCode.jrge
+    if str->equals("jrle"): return OpCode.jrle
+    if str->equals("st"): return OpCode.st
+    if str->equals("ld"): return OpCode.ld
+    if str->equals("lui"): return OpCode.lui
+    if str->equals("lli"): return OpCode.lli
+    if str->equals("li"): return OpCode.li
+    return OpCode.none
+
 fn<u64> lineCount(std.String const* code):
     var<u64> count = 1
     var<u64> i = 0
@@ -69,8 +103,35 @@ fn<bool> parseLabel(AssemblerData* data):
 
     return true
 
+fn<OpCode> parseOpCode(AssemblerData* data):
+    var oldIndex = data->codeIndex
+
+    var insStr = std.new(std.String)
+    var<u8> c
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        insStr->push_back(c)
+
+    var opCode = opCodeFromStr(insStr)
+    std.delete(insStr)
+
+    if opCode == OpCode.none:
+        data->codeIndex = oldIndex
+        data->column -= data->codeIndex - oldIndex
+        return OpCode.none
+
+    return opCode
+
 fn<bool> parseInstruction(AssemblerData* data):
+    var opCode = parseOpCode(data)
+    if opCode == OpCode.none:
+        return false
+
+    \\ TODO: Parse instruction arguments
     return false
+
+    return true
 
 fn<bool> parseComment(AssemblerData* data):
     if data->code->at(data->codeIndex) != '~':

@@ -11,13 +11,27 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         buffer[3] = (instruction >> 24) & 0xFF
         return 4
     elif outputFormat == OutputFormat.bintxt:
-        var len = std.strlen(std.itos(instruction, buffer, 2))
-        buffer[len] = '\n'
-        return len + 1
+        var<u64> len
+        len = std.strlen(std.itos(instruction & 0xFF, buffer, 2))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 8) & 0xFF, buffer + len, 2))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 16) & 0xFF, buffer + len, 2))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 24) & 0xFF, buffer + len, 2))
+        buffer[len++] = '\n'
+        return len
     elif outputFormat == OutputFormat.hextxt:
-        var len = std.strlen(std.itos(instruction, buffer, 16))
-        buffer[len] = '\n'
-        return len + 1
+        var<u64> len
+        len = std.strlen(std.itos(instruction & 0xFF, buffer, 16))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 8) & 0xFF, buffer + len, 16))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 16) & 0xFF, buffer + len, 16))
+        buffer[len++] = ' '
+        len += std.strlen(std.itos((instruction >> 24) & 0xFF, buffer + len, 16))
+        buffer[len++] = '\n'
+        return len
 
     handleMsgError("Invalid output format!")
 
