@@ -56,26 +56,33 @@ import "string.qnp"
 import "stdio.qnp"
 import "system.qnp"
 import "fileio.qnp"
+import "assembler.qnp"
+import "filewriter.qnp"
 
-fn<std.String*> readFile(u8 const* filename):
-    var file = std.new(std.File, filename, "r")
+\\ Read a file into a string.
+fn<std.String*> readFile(std.String const* filename):
+    var file = std.new(std.File, filename->raw(), "r")
     if file == null:
+        handleMsgError("Could not open file for reading!")
         return null
 
     var size = file->size()
 
     if size == std.limits.U64_MAX:
+        handleMsgError("Could not get file size!")
         std.delete(file)
         return null
 
     var buffer = (u8*)std.malloc(size + 1)
     if buffer == null:
+        handleMsgError("Could not allocate memory for file reading!")
         std.delete(file)
         return null
 
     var nRead = file->read(buffer, size)
     std.delete(file)
     if nRead != size:
+        handleMsgError("Could not read file!")
         std.free(buffer)
         return null
     
@@ -83,17 +90,26 @@ fn<std.String*> readFile(u8 const* filename):
 
     var str = std.new(std.String, buffer)
     if str == null:
+        handleMsgError("Could not allocate memory for file reading!")
         std.free(buffer)
         return null
 
     return str
 
+\\ Print help message.
 fn<> printHelp():
     std.println("Usage: qism [options*] <input_file>")
+    std.println()
+    std.println("Options:")
+    std.println("  -h                  show this help message and exit")
+    std.println("  -o=<output_file>    output file name")
+    std.println("                       default: <input_file>.bin")
+    std.println("  -v                  verbose mode")
+    std.println("  -f=<format>         output format")
+    std.println("                       default: bin")
+    std.println("                       options: bintxt, hextxt")
 
-enum OutputFormat:
-    bin, bintxt, hextxt
-
+\\ Option variables
 var<std.String*> inputFilename = null
 var<std.String*> outputFilename = null
 var<OutputFormat> outputFormat = OutputFormat.bin
@@ -102,6 +118,7 @@ var<bool> verbose = false
 var<u8* const*> argv
 var<u64> argc = std.getargs(&argv)
 
+\\ Parse options
 var argi = 0
 while argv[++argi] != null:
     var arg = std.new(std.String, (u8 const*)argv[argi])
@@ -145,22 +162,56 @@ while argv[++argi] != null:
     std.delete(arg)
     std.exit(1)
 
+\\ Check if input file was specified
 if inputFilename == null:
     std.println("error: no input file!")
     std.exit(1)
 
+\\ If output file was not specified, use input file name with .bin extension
 if outputFilename == null:
     outputFilename = std.new(std.String, inputFilename->raw())
     outputFilename->append(".bin")
 
+\\ Print option values if verbose
+if verbose:
+    std.println("Selected options:")
+    std.println("  Input file:    %", inputFilename->raw())
+    std.println("  Output file:   %", outputFilename->raw())
+    std.println("  Output format: % (%)", (i64)outputFormat, getOutputFormatName(outputFormat))
+    std.println("  Verbose:       %", verbose)
 
-\\ DO STUFF
-std.println("Selected options:")
-std.println("  Input file: %", inputFilename->raw())
-std.println("  Output file: %", outputFilename->raw())
-std.println("  Output format: %", (i64)outputFormat)
-std.println("  Verbose: %", verbose)
 
+if verbose: std.println("Reading input file...")
+var codeText = readFile(inputFilename)
+if codeText == null:
+    std.delete(inputFilename)
+    std.delete(outputFilename)
+    std.exit(1)
+
+if verbose: std.println("Assembling...")
+var<u64> nInstructions
+var<u32*> instructions = assemble(codeText, inputFilename, verbose, &nInstructions)
+if instructions == null:
+    std.delete(codeText)
+    std.delete(inputFilename)
+    std.delete(outputFilename)
+    std.exit(1)
+
+if verbose: std.println("Writing output file...")
+if !writeToFile(outputFilename, instructions, nInstructions, outputFormat):
+    std.delete(codeText)
+    std.free(instructions)
+    std.delete(inputFilename)
+    std.delete(outputFilename)
+    std.exit(1)
+
+
+\\ Cleanup
+if verbose: std.println("Cleaning up...")
+std.free(codeText)
+std.free(instructions)
 std.delete(inputFilename)
 std.delete(outputFilename)
+
+if verbose: std.println("Done!")
 std.exit(0)

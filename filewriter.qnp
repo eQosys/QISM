@@ -1,0 +1,45 @@
+import "outputformat.qnp"
+import "fileio.qnp"
+
+import "errorhandler.qnp"
+
+fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFormat):
+    if outputFormat == OutputFormat.bin:
+        buffer[0] = instruction & 0xFF
+        buffer[1] = (instruction >> 8) & 0xFF
+        buffer[2] = (instruction >> 16) & 0xFF
+        buffer[3] = (instruction >> 24) & 0xFF
+        return 4
+    elif outputFormat == OutputFormat.bintxt:
+        var len = std.strlen(std.itos(instruction, buffer, 2))
+        buffer[len] = '\n'
+        return len + 1
+    elif outputFormat == OutputFormat.hextxt:
+        var len = std.strlen(std.itos(instruction, buffer, 16))
+        buffer[len] = '\n'
+        return len + 1
+
+    handleMsgError("Invalid output format!")
+
+    return 0
+
+fn<bool> writeToFile(std.String const* filename, u32 const* instructions, u64 nInstructions, OutputFormat outputFormat):
+    var file = std.new(std.File, filename->raw(), "w")
+    if file == null:
+        return handleMsgError("Could not open output file for writing!")
+    
+    var<u64> i = 0
+    var<u8[48]> buffer
+    while i < nInstructions:
+        var bufferSize = genInstructionBuffer(buffer, instructions[i], outputFormat)
+        if bufferSize == 0:
+            std.delete(file)
+            return false
+
+        if file->write(buffer, bufferSize) != bufferSize:
+            std.delete(file)
+            return handleMsgError("Could not write to output file!")
+
+    std.delete(file)
+
+    return true

@@ -1,0 +1,12 @@
+enum OutputFormat:
+    bin, bintxt, hextxt
+
+fn<u8 const*> getOutputFormatName(OutputFormat format):
+    if format == OutputFormat.bin:
+        return "bin"
+    elif format == OutputFormat.bintxt:
+        return "bintxt"
+    elif format == OutputFormat.hextxt:
+        return "hextxt"
+
+    return "unknown"

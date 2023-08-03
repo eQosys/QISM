@@ -1,0 +1,145 @@
+import "string.qnp"
+import "stdio.qnp"
+
+import "errorhandler.qnp"
+
+fn<u64> lineCount(std.String const* code):
+    var<u64> count = 1
+    var<u64> i = 0
+    var<u64> codeLength = code->length()
+    while i < codeLength:
+        if code->at(i) == '\n':
+            ++count
+        ++i
+    return count
+
+pack AssemblerData:
+    var<std.String const*> code
+    var<std.String const*> filename
+    var<bool> verbose
+    var<u64> line
+    var<u64> column
+    var<u64> codeIndex
+    var<u64> codeLength
+    var<u64*> pnInstructions
+    var<u32*> instructions
+    var<bool> errorOccurred
+    var<std.String*> entryPointName
+
+fn<bool> parseWhitespace(AssemblerData* data):
+    while std.isspace(data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+
+    return data->codeIndex < data->codeLength
+
+fn<bool> parseNewline(AssemblerData* data):
+    if data->code->at(data->codeIndex) != '\n':
+        return false
+
+    ++data->codeIndex
+    ++data->line
+    data->column = 1
+    return true
+
+fn<bool> parseEntrypoint(AssemblerData* data):
+    if data->code->at(data->codeIndex) != '.':
+        return false
+
+    \\ TODO: Parse entrypoint name
+    return false
+    
+    return true
+
+fn<bool> parseLabel(AssemblerData* data):
+    if data->code->at(data->codeIndex) != ':':
+        return false
+    ++data->codeIndex
+    ++data->column
+    if data->code->at(data->codeIndex) != ':':
+        handleAsmError("Expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    ++data->codeIndex
+    ++data->column
+
+    \\ TODO: Parse label name
+    return false
+
+    return true
+
+fn<bool> parseInstruction(AssemblerData* data):
+    return false
+
+fn<bool> parseComment(AssemblerData* data):
+    if data->code->at(data->codeIndex) != '~':
+        return false
+    
+    ++data->codeIndex
+    ++data->column
+    if data->code->at(data->codeIndex) != '~':
+        handleAsmError("Expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    ++data->codeIndex
+    ++data->column
+
+    var<u8> c
+
+    while (c = data->code->at(data->codeIndex)) != '\n' && c != '\0':
+        ++data->codeIndex
+        ++data->column
+
+    return true
+
+
+
+fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbose, u64* pnInstructionsOut):
+    var<AssemblerData> data
+    data.code = code
+    data.filename = filename
+    data.verbose = verbose
+    data.line = 1
+    data.column = 1
+    data.codeIndex = 0
+    data.codeLength = code->length()
+    data.pnInstructions = pnInstructionsOut
+    *data.pnInstructions = 0
+    data.errorOccurred = false
+    data.entryPointName = null
+
+    var buffSize = lineCount(code) * 4
+    if verbose: std.println("Allocating % bytes of instruction memory...", buffSize)
+    data.instructions = (u32*)std.malloc(buffSize)
+    if data.instructions == null:
+        handleMsgError("Failed to allocate instruction memory")
+        return null
+
+    while data.codeIndex < data.codeLength:
+        if !parseWhitespace(&data): break
+        if data.errorOccurred: break
+
+        if parseNewline(&data): continue
+        if data.errorOccurred: break
+        
+        if parseEntrypoint(&data): continue
+        if data.errorOccurred: break
+        
+        if parseLabel(&data): continue
+        if data.errorOccurred: break
+        
+        if parseInstruction(&data): continue
+        if data.errorOccurred: break
+        
+        if parseComment(&data): continue
+        if data.errorOccurred: break
+        
+        return handleAsmError("Unexpected character!", data.filename, data.line, data.column, data.instructions)
+    
+    if data.errorOccurred:
+        std.free(data.instructions)
+        return null
+
+    return data.instructions
