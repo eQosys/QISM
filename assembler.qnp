@@ -12,6 +12,12 @@ enum OpCode:
     st, ld,
     lui, lli, li
 
+enum ArgType:
+    none,
+    plainReg,
+    offsetReg,
+    imm
+
 fn<OpCode> opCodeFromStr(std.String* str):
     if str->equals("add"): return OpCode.add
     if str->equals("sub"): return OpCode.sub
@@ -37,6 +43,49 @@ fn<OpCode> opCodeFromStr(std.String* str):
     if str->equals("li"): return OpCode.li
     return OpCode.none
 
+fn<ArgType const*> argTypesFromOpCode(OpCode oc):
+    static<ArgType[5]> argTypes
+    if oc == OpCode.add || oc == OpCode.sub || \
+        oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.offsetReg
+        argTypes[2] = ArgType.offsetReg
+        argTypes[3] = ArgType.none
+    elif oc == OpCode.jz || oc == OpCode.jnz || \
+        oc == OpCode.jgz || oc == OpCode.jlz || \
+        oc == OpCode.jge || oc == OpCode.jle || \
+        oc == OpCode.jrz || oc == OpCode.jrnz || \
+        oc == OpCode.jrgz || oc == OpCode.jrlz || \
+        oc == OpCode.jrge || oc == OpCode.jrle:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.offsetReg
+        argTypes[2] = ArgType.none
+    elif oc == OpCode.st:
+        argTypes[0] = ArgType.offsetReg
+        argTypes[1] = ArgType.offsetReg
+        argTypes[2] = ArgType.none
+    elif oc == OpCode.ld:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.offsetReg
+        argTypes[2] = ArgType.none
+    elif oc == OpCode.lui:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.imm
+        argTypes[2] = ArgType.none
+    elif oc == OpCode.lli:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.imm
+        argTypes[2] = ArgType.none
+    elif oc == OpCode.li:
+        argTypes[0] = ArgType.plainReg
+        argTypes[1] = ArgType.imm
+        argTypes[2] = ArgType.none
+    else:
+        handleMsgError("error (internal): unknown opcode!")
+        return null
+
+    return argTypes
+
 fn<u64> lineCount(std.String const* code):
     var<u64> count = 1
     var<u64> i = 0
@@ -58,14 +107,27 @@ pack AssemblerData:
     var<u64*> pnInstructions
     var<u32*> instructions
     var<bool> errorOccurred
-    var<std.String*> entryPointName
+    var<std.String*> entrypointName
 
 fn<bool> parseWhitespace(AssemblerData* data):
+    var<bool> parsedWhitespace = false
     while std.isspace(data->code->at(data->codeIndex)):
         ++data->codeIndex
         ++data->column
+        parsedWhitespace = true
 
-    return data->codeIndex < data->codeLength
+    return parsedWhitespace
+
+fn<bool> parseExact(AssemblerData* data, u8 const* str):
+    var<u64> i = 0
+    var<u64> strLength = std.strlen(str)
+    while i < strLength:
+        if data->code->at(data->codeIndex + i) != str[i]:
+            return false
+        ++i
+    data->codeIndex += strLength
+    data->column += strLength
+    return true
 
 fn<bool> parseNewline(AssemblerData* data):
     if data->code->at(data->codeIndex) != '\n':
@@ -80,8 +142,35 @@ fn<bool> parseEntrypoint(AssemblerData* data):
     if data->code->at(data->codeIndex) != '.':
         return false
 
-    \\ TODO: Parse entrypoint name
-    return false
+    if !parseExact(data, ".entry"):
+        handleAsmError("Expected 'entry' after '.'!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    if !parseWhitespace(data):
+        handleAsmError("Expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    var<u8> c
+    var name = std.new(std.String)
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        name->push_back(c)
+
+    if name->length() == 0:
+        handleAsmError("Expected entrypoint name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    parseWhitespace(data)
+    if !parseNewline(data):
+        handleAsmError("Expected newline after entrypoint name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    data->entrypointName = name
     
     return true
 
@@ -98,8 +187,26 @@ fn<bool> parseLabel(AssemblerData* data):
     ++data->codeIndex
     ++data->column
 
-    \\ TODO: Parse label name
-    return false
+    var<u8> c
+    var name = std.new(std.String)
+
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        name->push_back(c)
+
+    if name->length() == 0:
+        handleAsmError("Expected label name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    parseWhitespace(data)
+    if !parseNewline(data):
+        handleAsmError("Expected newline after label name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    \\ TODO: Add label to symbol table
 
     return true
 
@@ -128,7 +235,18 @@ fn<bool> parseInstruction(AssemblerData* data):
     if opCode == OpCode.none:
         return false
 
-    \\ TODO: Parse instruction arguments
+    var argTypes = argTypesFromOpCode(opCode)
+    var<u64> argIndex = 0
+
+    while argTypes[argIndex] != ArgType.none:
+        if !parseWhitespace(data):
+            handleAsmError("Expected leading whitespace for instruction argument!", data->filename, data->line, data->column, data->instructions)
+            data->errorOccurred = true
+            return false
+        ++argIndex
+
+        \\ TODO: Parse instruction arguments
+
     return false
 
     return true
@@ -153,6 +271,8 @@ fn<bool> parseComment(AssemblerData* data):
         ++data->codeIndex
         ++data->column
 
+    parseNewline(data)
+
     return true
 
 
@@ -169,7 +289,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
     data.pnInstructions = pnInstructionsOut
     *data.pnInstructions = 0
     data.errorOccurred = false
-    data.entryPointName = null
+    data.entrypointName = null
 
     var buffSize = lineCount(code) * 4
     if verbose: std.println("Allocating % bytes of instruction memory...", buffSize)
@@ -179,8 +299,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
         return null
 
     while data.codeIndex < data.codeLength:
-        if !parseWhitespace(&data): break
-        if data.errorOccurred: break
+        parseWhitespace(&data)
 
         if parseNewline(&data): continue
         if data.errorOccurred: break

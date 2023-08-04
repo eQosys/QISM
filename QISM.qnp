@@ -8,6 +8,8 @@
 \\   -f=<format>         output format
 \\                        default: bin
 \\                        options: bintxt, hextxt
+\\   -a                  add annotations to output file
+\\                       only works with bintxt and hextxt formats
 
 \\ Registers:
 \\   zero                zero register
@@ -24,8 +26,8 @@
 \\   or  [dest] [src1]* [src2]*
 \\   xor [dest] [src1]* [src2]*
 \\   jxx [addr]* [src]*
-\\   st
-\\   ld
+\\   st  [addr]* [src]*
+\\   ld  [dest] [addr]*
 \\   lui [dest] [imm]
 \\   lli [dest] [imm]
 \\   li  [dest] [imm]
@@ -114,6 +116,7 @@ var<std.String*> inputFilename = null
 var<std.String*> outputFilename = null
 var<OutputFormat> outputFormat = OutputFormat.bin
 var<bool> verbose = false
+var<bool> addAnnotations = false
 
 var<u8* const*> argv
 var<u64> argc = std.getargs(&argv)
@@ -146,6 +149,10 @@ while argv[++argi] != null:
             std.println("error: invalid output format!")
             std.delete(arg)
             std.exit(1)
+        std.delete(arg)
+        continue
+    elif arg->equals("-a"):
+        addAnnotations = true
         std.delete(arg)
         continue
     
@@ -197,6 +204,7 @@ if instructions == null:
     std.delete(outputFilename)
     std.exit(1)
 
+\\ TODO: Add annotations if requested
 if verbose: std.println("Writing output file...")
 if !writeToFile(outputFilename, instructions, nInstructions, outputFormat):
     std.delete(codeText)
