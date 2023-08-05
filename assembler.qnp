@@ -34,7 +34,44 @@ enum InsType:
     memWrite,
     immLoad
 
-fn<InsCode> insCodeFromStr(std.String* str):
+enum RegID:
+    zero = 0b0000,
+    gp   = 0b0001,
+    sp   = 0b0010,
+    bp   = 0b0011,
+    ra   = 0b0100,
+    r0   = 0b0101,
+    r1   = 0b0110,
+    r2   = 0b0111,
+    r3   = 0b1000,
+    r4   = 0b1001,
+    r5   = 0b1010,
+    r6   = 0b1011,
+    r7   = 0b1100,
+    r8   = 0b1101,
+    r9   = 0b1110,
+    r10  = 0b1111,
+    none = 0b11111
+
+pack ArgParseData:
+    var<RegID> register
+    var<i32> offset
+    var<i32> offsetCount
+
+pack AssemblerData:
+    var<std.String const*> code
+    var<std.String const*> filename
+    var<bool> verbose
+    var<u64> line
+    var<u64> column
+    var<u64> codeIndex
+    var<u64> codeLength
+    var<u64> nInstructions
+    var<u32*> instructions
+    var<bool> errorOccurred
+    var<std.String*> entrypointName
+
+fn<InsCode> insCodeFromStr(std.String const* str):
     if str->equals("add"): return InsCode.add
     if str->equals("sub"): return InsCode.sub
     if str->equals("and"): return InsCode.and
@@ -95,6 +132,25 @@ fn<InsType> insTypeFromOpCode(OpCode oc):
     handleMsgError("(internal): unknown opcode!")
     return InsType.none
 
+fn<RegID> regIDFromStr(std.String const* str):
+    if str->equals("zero"): return RegID.zero
+    if str->equals("gp"): return RegID.gp
+    if str->equals("sp"): return RegID.sp
+    if str->equals("bp"): return RegID.bp
+    if str->equals("ra"): return RegID.ra
+    if str->equals("r0"): return RegID.r0
+    if str->equals("r1"): return RegID.r1
+    if str->equals("r2"): return RegID.r2
+    if str->equals("r3"): return RegID.r3
+    if str->equals("r4"): return RegID.r4
+    if str->equals("r5"): return RegID.r5
+    if str->equals("r6"): return RegID.r6
+    if str->equals("r7"): return RegID.r7
+    if str->equals("r8"): return RegID.r8
+    if str->equals("r9"): return RegID.r9
+    if str->equals("r10"): return RegID.r10
+    return RegID.none
+
 fn<u64> lineCount(std.String const* code):
     var<u64> count = 1
     var<u64> i = 0
@@ -104,19 +160,6 @@ fn<u64> lineCount(std.String const* code):
             ++count
         ++i
     return count
-
-pack AssemblerData:
-    var<std.String const*> code
-    var<std.String const*> filename
-    var<bool> verbose
-    var<u64> line
-    var<u64> column
-    var<u64> codeIndex
-    var<u64> codeLength
-    var<u64*> pnInstructions
-    var<u32*> instructions
-    var<bool> errorOccurred
-    var<std.String*> entrypointName
 
 fn<bool> parseWhitespace(AssemblerData* data):
     var<bool> parsedWhitespace = false
@@ -235,8 +278,77 @@ fn<InsCode> parseInsCode(AssemblerData* data):
 
     return insCode
 
+fn<bool> parseReg(AssemblerData* data, ArgParseData* apd):
+    if !parseWhitespace(data):
+        handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    var name = std.new(std.String)
+    var<u8> c
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        name->push_back(c)
+
+    apd->register = regIDFromStr(name)
+    std.delete(name)
+
+    if apd->register == RegID.none:
+        handleAsmError("expected register name!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    return true
+
+fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
+    if !parseReg(data, apd):
+        return false
+
+    if !parseExact(data, "("):
+        if apd->offsetCount >= 1:
+            ++apd->offsetCount
+        return true
+
+    ++apd->offsetCount
+
+    if apd->offsetCount != 1:
+        handleAsmError("instructions may not have more than one offset specified!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    var offStr = std.new(std.String)
+    var<u8> c
+    while std.isnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        offStr->push_back(c)
+
+    \\ TODO: Parse Offset Literal
+
+    if !parseExact(data, ")"):
+        handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    return true
+
 fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
-    return false
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.offset = 0
+    apd.offsetCount = 0
+
+    if !parseReg(data, &apd):
+        return false
+    
+    if !parseRegOffset(data, &apd):
+        return false
+
+    if !parseRegOffset(data, &apd):
+        return false
+
+    return true
 
 fn<bool> parseInstructionCondBranch(AssemblerData* data, InsCode ic):
     return false
@@ -256,6 +368,7 @@ fn<bool> parseInstruction(AssemblerData* data):
         return false
 
     var opCode = opCodeFromInsCode(insCode)
+    data->instructions[data->nInstructions] = (u32)opCode
 
     var insType = insTypeFromOpCode(opCode)
     
@@ -304,8 +417,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
     data.column = 1
     data.codeIndex = 0
     data.codeLength = code->length()
-    data.pnInstructions = pnInstructionsOut
-    *data.pnInstructions = 0
+    data.nInstructions = 0
     data.errorOccurred = false
     data.entrypointName = null
 
@@ -339,5 +451,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
     if data.errorOccurred:
         std.free(data.instructions)
         return null
+
+    *pnInstructionsOut = data.nInstructions
 
     return data.instructions
