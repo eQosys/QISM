@@ -53,10 +53,22 @@ enum RegID:
     r10  = 0b1111,
     none = 0b11111
 
+enum CondID:
+    z, nz,
+    gz, lz,
+    ge, le
+
+enum OffsetType:
+    normal,
+    short,
+    longContinuous,
+    longSplit
+
 pack ArgParseData:
     var<RegID> register
     var<i32> offset
-    var<i32> offsetCount
+    var<bool> hasOffset
+    var<bool> offsetAlreadyUsed
 
 pack AssemblerData:
     var<std.String const*> code
@@ -306,16 +318,16 @@ fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
         return false
 
     if !parseExact(data, "("):
-        if apd->offsetCount >= 1:
-            ++apd->offsetCount
+        apd->hasOffset = false
         return true
 
-    ++apd->offsetCount
-
-    if apd->offsetCount != 1:
+    if apd->offsetAlreadyUsed:
         handleAsmError("instructions may not have more than one offset specified!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
+
+    apd->offsetAlreadyUsed = true
+    apd->hasOffset = true
 
     var offStr = std.new(std.String)
     var<u8> c
@@ -324,7 +336,14 @@ fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
         ++data->column
         offStr->push_back(c)
 
-    \\ TODO: Parse Offset Literal
+    if offStr->beginswith("0x"):
+        apd->offset = std.stoi(offStr->raw() + 2, 16)
+    elif offStr->beginswith("0b"):
+        apd->offset = std.stoi(offStr->raw() + 2, 2)
+    elif offStr->beginswith("0"):
+        apd->offset = std.stoi(offStr->raw() + 1, 8)
+    else:
+        apd->offset = std.stoi(offStr->raw(), 10)
 
     if !parseExact(data, ")"):
         handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
@@ -333,20 +352,71 @@ fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
 
     return true
 
+fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
+    data->instructions[data->nInstructions] |= (((u32)part) & mask) << offset
+
+fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
+    writeInsPart(data, oc, 0b11111, 0)
+
+fn<> writeInsDestReg(AssemblerData* data, RegID rid):
+    writeInsPart(data, rid, 0b1111, 5)
+
+fn<> writeInsCondition(AssemblerData* data, CondID cid):
+    writeInsPart(data, cid, 0b1111, 5)
+
+fn<> writeInsOffsetSelect(AssemblerData* data, i32 os):
+    writeInsPart(data, os, 0b1, 9)
+
+fn<> writeInsSourceReg1(AssemblerData* data, RegID rid):
+    writeInsPart(data, rid, 0b1111, 10)
+
+fn<> writeInsSourceReg2(AssemblerData* data, RegID rid):
+    writeInsPart(data, rid, 0b1111, 14)
+
+fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
+    if ot == OffsetType.normal:
+        writeInsPart(data, offset, 0b11111111111111, 18)
+    elif ot == OffsetType.short:
+        writeInsPart(data, offset, 0b1111111111111, 18)
+    elif ot == OffsetType.longContinuous:
+        writeInsPart(data, offset, 0b111111111111111111, 14)
+    elif ot == OffsetType.longSplit:
+        writeInsPart(data, offset, 0b1111, 5)
+        writeInsPart(data, offset >> 5, 0b11111111111111, 18)
+
+fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
+    writeInsPart(data, rj, 0b1, 31)
+
+fn<> writeInsImmediate(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, 0b11111111111111111111111, 9)
+
 fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
     apd.register = RegID.none
     apd.offset = 0
-    apd.offsetCount = 0
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
 
     if !parseReg(data, &apd):
         return false
+
+    writeInsDestReg(data, apd.register)
     
     if !parseRegOffset(data, &apd):
         return false
 
+    writeInsSourceReg1(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 0)
+        writeInsOffset(data, apd.offset, OffsetType.normal)
+
     if !parseRegOffset(data, &apd):
         return false
+
+    writeInsSourceReg2(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 1)
+        writeInsOffset(data, apd.offset, OffsetType.normal)
 
     return true
 
@@ -368,24 +438,32 @@ fn<bool> parseInstruction(AssemblerData* data):
         return false
 
     var opCode = opCodeFromInsCode(insCode)
-    data->instructions[data->nInstructions] = (u32)opCode
+    data->instructions[data->nInstructions] = 0
+    writeInsOpCode(data, opCode)
 
     var insType = insTypeFromOpCode(opCode)
     
-    if insType == InsType.threeArg:
-        return parseInstructionThreeArg(data, insCode)
-    if insType == InsType.condBranch:
-        return parseInstructionCondBranch(data, insCode)
-    if insType == InsType.memRead:
-        return parseInstructionMemRead(data, insCode)
-    if insType == InsType.memWrite:
-        return parseInstructionMemWrite(data, insCode)
-    if insType == InsType.immLoad:
-        return parseInstructionImmLoad(data, insCode)
+    var success = false
 
-    handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
-    data->errorOccurred = true
-    return false
+    if insType == InsType.threeArg:
+        success =  parseInstructionThreeArg(data, insCode)
+    elif insType == InsType.condBranch:
+        success = parseInstructionCondBranch(data, insCode)
+    elif insType == InsType.memRead:
+        success = parseInstructionMemRead(data, insCode)
+    elif insType == InsType.memWrite:
+        success = parseInstructionMemWrite(data, insCode)
+    elif insType == InsType.immLoad:
+        success = parseInstructionImmLoad(data, insCode)
+    else:
+        handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
+    if success:
+        ++data->nInstructions
+
+    return success
 
 fn<bool> parseComment(AssemblerData* data):
     if !parseExact(data, "~"):

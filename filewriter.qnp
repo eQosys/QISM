@@ -10,7 +10,7 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         buffer[2] = (instruction >> 16) & 0xFF
         buffer[3] = (instruction >> 24) & 0xFF
         return 4
-    elif outputFormat == OutputFormat.bintxt:
+    if outputFormat == OutputFormat.bintxt:
         var<u64> len
         len = std.strlen(std.itos(instruction & 0xFF, buffer, 2))
         buffer[len++] = ' '
@@ -21,7 +21,7 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         len += std.strlen(std.itos((instruction >> 24) & 0xFF, buffer + len, 2))
         buffer[len++] = '\n'
         return len
-    elif outputFormat == OutputFormat.hextxt:
+    if outputFormat == OutputFormat.hextxt:
         var<u64> len
         len = std.strlen(std.itos(instruction & 0xFF, buffer, 16))
         buffer[len++] = ' '
@@ -34,7 +34,6 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         return len
 
     handleMsgError("Invalid output format!")
-
     return 0
 
 fn<bool> writeToFile(std.String const* filename, u32 const* instructions, u64 nInstructions, OutputFormat outputFormat):
@@ -53,6 +52,7 @@ fn<bool> writeToFile(std.String const* filename, u32 const* instructions, u64 nI
         if file->write(buffer, bufferSize) != bufferSize:
             std.delete(file)
             return handleMsgError("Could not write to output file!")
+        ++i
 
     std.delete(file)
 
