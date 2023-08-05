@@ -139,10 +139,10 @@ fn<bool> parseNewline(AssemblerData* data):
     return true
 
 fn<bool> parseEntrypoint(AssemblerData* data):
-    if data->code->at(data->codeIndex) != '.':
+    if !parseExact(data, "."):
         return false
 
-    if !parseExact(data, ".entry"):
+    if !parseExact(data, "entry"):
         handleAsmError("Expected 'entry' after '.'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
@@ -175,17 +175,13 @@ fn<bool> parseEntrypoint(AssemblerData* data):
     return true
 
 fn<bool> parseLabel(AssemblerData* data):
-    if data->code->at(data->codeIndex) != ':':
+    if !parseExact(data, ":"):
         return false
-    ++data->codeIndex
-    ++data->column
-    if data->code->at(data->codeIndex) != ':':
+    
+    if !parseExact(data, ":"):
         handleAsmError("Expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
-
-    ++data->codeIndex
-    ++data->column
 
     var<u8> c
     var name = std.new(std.String)
@@ -211,22 +207,22 @@ fn<bool> parseLabel(AssemblerData* data):
     return true
 
 fn<OpCode> parseOpCode(AssemblerData* data):
-    var oldIndex = data->codeIndex
-
     var insStr = std.new(std.String)
+
     var<u8> c
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
+    var<u64> i = 0
+    while std.isalnum(c = data->code->at(data->codeIndex + i)):
         insStr->push_back(c)
+        ++i
 
     var opCode = opCodeFromStr(insStr)
     std.delete(insStr)
 
     if opCode == OpCode.none:
-        data->codeIndex = oldIndex
-        data->column -= data->codeIndex - oldIndex
         return OpCode.none
+
+    data->codeIndex += i
+    data->column += i
 
     return opCode
 
@@ -252,18 +248,13 @@ fn<bool> parseInstruction(AssemblerData* data):
     return true
 
 fn<bool> parseComment(AssemblerData* data):
-    if data->code->at(data->codeIndex) != '~':
+    if !parseExact(data, "~"):
         return false
-    
-    ++data->codeIndex
-    ++data->column
-    if data->code->at(data->codeIndex) != '~':
+
+    if !parseExact(data, "~"):
         handleAsmError("Expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
-
-    ++data->codeIndex
-    ++data->column
 
     var<u8> c
 
