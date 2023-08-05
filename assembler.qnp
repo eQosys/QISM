@@ -3,7 +3,7 @@ import "stdio.qnp"
 
 import "errorhandler.qnp"
 
-enum OpCode:
+enum InsCode:
     none,
     add, sub,
     and, or, xor,
@@ -12,79 +12,88 @@ enum OpCode:
     st, ld,
     lui, lli, li
 
-enum ArgType:
-    none,
-    plainReg,
-    offsetReg,
-    imm
+enum OpCode:
+    none = 0b111111,
+    add  = 0b00000,
+    sub  = 0b00001,
+    and  = 0b00010,
+    or   = 0b00011,
+    xor  = 0b00100,
+    jxx  = 0b00101,
+    st   = 0b00110,
+    ld   = 0b00111,
+    lui  = 0b01000,
+    lli  = 0b01001,
+    li   = 0b01010
 
-fn<OpCode> opCodeFromStr(std.String* str):
-    if str->equals("add"): return OpCode.add
-    if str->equals("sub"): return OpCode.sub
-    if str->equals("and"): return OpCode.and
-    if str->equals("or"): return OpCode.or
-    if str->equals("xor"): return OpCode.xor
-    if str->equals("jz"): return OpCode.jz
-    if str->equals("jnz"): return OpCode.jnz
-    if str->equals("jgz"): return OpCode.jgz
-    if str->equals("jlz"): return OpCode.jlz
-    if str->equals("jge"): return OpCode.jge
-    if str->equals("jle"): return OpCode.jle
-    if str->equals("jrz"): return OpCode.jrz
-    if str->equals("jrnz"): return OpCode.jrnz
-    if str->equals("jrgz"): return OpCode.jrgz
-    if str->equals("jrlz"): return OpCode.jrlz
-    if str->equals("jrge"): return OpCode.jrge
-    if str->equals("jrle"): return OpCode.jrle
-    if str->equals("st"): return OpCode.st
-    if str->equals("ld"): return OpCode.ld
-    if str->equals("lui"): return OpCode.lui
-    if str->equals("lli"): return OpCode.lli
-    if str->equals("li"): return OpCode.li
+enum InsType:
+    none,
+    threeArg,
+    condBranch,
+    memRead,
+    memWrite,
+    immLoad
+
+fn<InsCode> insCodeFromStr(std.String* str):
+    if str->equals("add"): return InsCode.add
+    if str->equals("sub"): return InsCode.sub
+    if str->equals("and"): return InsCode.and
+    if str->equals("or"): return InsCode.or
+    if str->equals("xor"): return InsCode.xor
+    if str->equals("jz"): return InsCode.jz
+    if str->equals("jnz"): return InsCode.jnz
+    if str->equals("jgz"): return InsCode.jgz
+    if str->equals("jlz"): return InsCode.jlz
+    if str->equals("jge"): return InsCode.jge
+    if str->equals("jle"): return InsCode.jle
+    if str->equals("jrz"): return InsCode.jrz
+    if str->equals("jrnz"): return InsCode.jrnz
+    if str->equals("jrgz"): return InsCode.jrgz
+    if str->equals("jrlz"): return InsCode.jrlz
+    if str->equals("jrge"): return InsCode.jrge
+    if str->equals("jrle"): return InsCode.jrle
+    if str->equals("st"): return InsCode.st
+    if str->equals("ld"): return InsCode.ld
+    if str->equals("lui"): return InsCode.lui
+    if str->equals("lli"): return InsCode.lli
+    if str->equals("li"): return InsCode.li
+    return InsCode.none
+
+fn<OpCode> opCodeFromInsCode(InsCode ic):
+    if ic == InsCode.add: return OpCode.add
+    if ic == InsCode.sub: return OpCode.sub
+    if ic == InsCode.and: return OpCode.and
+    if ic == InsCode.or: return OpCode.or
+    if ic == InsCode.xor: return OpCode.xor
+    if ic == InsCode.jz || ic == InsCode.jnz || \
+        ic == InsCode.jgz || ic == InsCode.jlz || \
+        ic == InsCode.jge || ic == InsCode.jle || \
+        ic == InsCode.jrz || ic == InsCode.jrnz || \
+        ic == InsCode.jrgz || ic == InsCode.jrlz || \
+        ic == InsCode.jrge || ic == InsCode.jrle:
+        return OpCode.jxx
+    if ic == InsCode.st: return OpCode.st
+    if ic == InsCode.ld: return OpCode.ld
+    if ic == InsCode.lui: return OpCode.lui
+    if ic == InsCode.lli: return OpCode.lli
+    if ic == InsCode.li: return OpCode.li
     return OpCode.none
 
-fn<ArgType const*> argTypesFromOpCode(OpCode oc):
-    static<ArgType[5]> argTypes
+fn<InsType> insTypeFromOpCode(OpCode oc):
     if oc == OpCode.add || oc == OpCode.sub || \
         oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.offsetReg
-        argTypes[2] = ArgType.offsetReg
-        argTypes[3] = ArgType.none
-    elif oc == OpCode.jz || oc == OpCode.jnz || \
-        oc == OpCode.jgz || oc == OpCode.jlz || \
-        oc == OpCode.jge || oc == OpCode.jle || \
-        oc == OpCode.jrz || oc == OpCode.jrnz || \
-        oc == OpCode.jrgz || oc == OpCode.jrlz || \
-        oc == OpCode.jrge || oc == OpCode.jrle:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.offsetReg
-        argTypes[2] = ArgType.none
-    elif oc == OpCode.st:
-        argTypes[0] = ArgType.offsetReg
-        argTypes[1] = ArgType.offsetReg
-        argTypes[2] = ArgType.none
-    elif oc == OpCode.ld:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.offsetReg
-        argTypes[2] = ArgType.none
-    elif oc == OpCode.lui:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.imm
-        argTypes[2] = ArgType.none
-    elif oc == OpCode.lli:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.imm
-        argTypes[2] = ArgType.none
-    elif oc == OpCode.li:
-        argTypes[0] = ArgType.plainReg
-        argTypes[1] = ArgType.imm
-        argTypes[2] = ArgType.none
-    else:
-        handleMsgError("error (internal): unknown opcode!")
-        return null
+        return InsType.threeArg
+    if oc == OpCode.jxx:
+        return InsType.condBranch
+    if oc == OpCode.st:
+        return InsType.memWrite
+    if oc == OpCode.ld:
+        return InsType.memRead
+    if oc == OpCode.lui || oc == OpCode.lli || oc == OpCode.li:
+        return InsType.immLoad
 
-    return argTypes
+    handleMsgError("(internal): unknown opcode!")
+    return InsType.none
 
 fn<u64> lineCount(std.String const* code):
     var<u64> count = 1
@@ -143,12 +152,12 @@ fn<bool> parseEntrypoint(AssemblerData* data):
         return false
 
     if !parseExact(data, "entry"):
-        handleAsmError("Expected 'entry' after '.'!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected 'entry' after '.'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
     if !parseWhitespace(data):
-        handleAsmError("Expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
@@ -160,13 +169,13 @@ fn<bool> parseEntrypoint(AssemblerData* data):
         name->push_back(c)
 
     if name->length() == 0:
-        handleAsmError("Expected entrypoint name!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected entrypoint name!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
     parseWhitespace(data)
     if !parseNewline(data):
-        handleAsmError("Expected newline after entrypoint name!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected newline after entrypoint name!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
@@ -179,7 +188,7 @@ fn<bool> parseLabel(AssemblerData* data):
         return false
     
     if !parseExact(data, ":"):
-        handleAsmError("Expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
@@ -192,13 +201,13 @@ fn<bool> parseLabel(AssemblerData* data):
         name->push_back(c)
 
     if name->length() == 0:
-        handleAsmError("Expected label name!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected label name!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
     parseWhitespace(data)
     if !parseNewline(data):
-        handleAsmError("Expected newline after label name!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected newline after label name!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
@@ -206,7 +215,7 @@ fn<bool> parseLabel(AssemblerData* data):
 
     return true
 
-fn<OpCode> parseOpCode(AssemblerData* data):
+fn<InsCode> parseInsCode(AssemblerData* data):
     var insStr = std.new(std.String)
 
     var<u8> c
@@ -215,44 +224,62 @@ fn<OpCode> parseOpCode(AssemblerData* data):
         insStr->push_back(c)
         ++i
 
-    var opCode = opCodeFromStr(insStr)
+    var insCode = insCodeFromStr(insStr)
     std.delete(insStr)
 
-    if opCode == OpCode.none:
-        return OpCode.none
+    if insCode == InsCode.none:
+        return InsCode.none
 
     data->codeIndex += i
     data->column += i
 
-    return opCode
+    return insCode
 
-fn<bool> parseInstruction(AssemblerData* data):
-    var opCode = parseOpCode(data)
-    if opCode == OpCode.none:
-        return false
-
-    var argTypes = argTypesFromOpCode(opCode)
-    var<u64> argIndex = 0
-
-    while argTypes[argIndex] != ArgType.none:
-        if !parseWhitespace(data):
-            handleAsmError("Expected leading whitespace for instruction argument!", data->filename, data->line, data->column, data->instructions)
-            data->errorOccurred = true
-            return false
-        ++argIndex
-
-        \\ TODO: Parse instruction arguments
-
+fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     return false
 
-    return true
+fn<bool> parseInstructionCondBranch(AssemblerData* data, InsCode ic):
+    return false
+
+fn<bool> parseInstructionMemRead(AssemblerData* data, InsCode ic):
+    return false
+
+fn<bool> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
+    return false
+
+fn<bool> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
+    return false
+
+fn<bool> parseInstruction(AssemblerData* data):
+    var insCode = parseInsCode(data)
+    if insCode == InsCode.none:
+        return false
+
+    var opCode = opCodeFromInsCode(insCode)
+
+    var insType = insTypeFromOpCode(opCode)
+    
+    if insType == InsType.threeArg:
+        return parseInstructionThreeArg(data, insCode)
+    if insType == InsType.condBranch:
+        return parseInstructionCondBranch(data, insCode)
+    if insType == InsType.memRead:
+        return parseInstructionMemRead(data, insCode)
+    if insType == InsType.memWrite:
+        return parseInstructionMemWrite(data, insCode)
+    if insType == InsType.immLoad:
+        return parseInstructionImmLoad(data, insCode)
+
+    handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
+    data->errorOccurred = true
+    return false
 
 fn<bool> parseComment(AssemblerData* data):
     if !parseExact(data, "~"):
         return false
 
     if !parseExact(data, "~"):
-        handleAsmError("Expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
+        handleAsmError("expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
         return false
 
@@ -286,7 +313,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
     if verbose: std.println("Allocating % bytes of instruction memory...", buffSize)
     data.instructions = (u32*)std.malloc(buffSize)
     if data.instructions == null:
-        handleMsgError("Failed to allocate instruction memory")
+        handleMsgError("failed to allocate instruction memory")
         return null
 
     while data.codeIndex < data.codeLength:
@@ -307,7 +334,7 @@ fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbo
         if parseComment(&data): continue
         if data.errorOccurred: break
         
-        return handleAsmError("Unexpected character!", data.filename, data.line, data.column, data.instructions)
+        return handleAsmError("unexpected character!", data.filename, data.line, data.column, data.instructions)
     
     if data.errorOccurred:
         std.free(data.instructions)
