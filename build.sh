@@ -2,4 +2,4 @@
 
 mkdir -p ./bin
 
-qinp -o=./bin/qism QISM.qnp
+qinp -k -v -o=./bin/qism QISM.qnp

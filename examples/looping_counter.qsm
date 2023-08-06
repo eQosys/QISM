@@ -5,5 +5,5 @@
 ::begin
 xor r0 r0 r0
 ::loop
-add r0 r0 zero(1)
-~~jz zero(loop) zero
+add r0 r0 zero(1000)
+jrz zero(-4) zero

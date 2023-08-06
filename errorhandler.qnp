@@ -5,7 +5,18 @@ fn<bool> handleMsgError(u8 const* message):
     std.println("error: %", message)
     return false
 
+fn<bool> handleMsgError(u8 const* message, ...):
+    std.print("error: ")
+    std.println(message, ...)
+    return false
+
 fn<u32*> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column, u32* instructions):
     std.println("error: %:%:%: %", filename->raw(), line, column, message)
+    std.free(instructions)
+    return null
+
+fn<u32*> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column, u32* instructions, ...):
+    std.print("error: %:%:%: ", filename->raw(), line, column)
+    std.println(message, ...)
     std.free(instructions)
     return null

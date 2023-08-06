@@ -3,15 +3,16 @@ import "fileio.qnp"
 
 import "errorhandler.qnp"
 
-fn<u8*> itos(i64 num, u8* buffer, i64 base, i64 width):
-    var<i64> len = std.strlen(std.itos(num, buffer, base))
-    var<i64> i = len - 1
-    while i >= 0:
-        buffer[width - len + i] = buffer[i]
-        --i
-    i = 0
-    while i < width - len:
-        buffer[i++] = '0'
+fn<u8 const*> itos(i64 num, u8* buffer, i64 base, i64 width):
+    var len = std.strlen(std.itos(num, buffer, base))
+    var shiftBuffer = buffer
+    while len < width:
+        *shiftBuffer = '0'
+        ++shiftBuffer
+        ++len
+        
+    var _ = std.itos(num, shiftBuffer, base)
+
     return buffer
 
 fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFormat):

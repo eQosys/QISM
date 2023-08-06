@@ -54,9 +54,13 @@ enum RegID:
     none = 0b11111
 
 enum CondID:
-    z, nz,
-    gz, lz,
-    ge, le
+    z  = 0b0000,
+    nz = 0b0001,
+    gz = 0b0010,
+    lz = 0b0011,
+    ge = 0b0100,
+    le = 0b0101,
+    none = 0b11111
 
 enum OffsetType:
     normal,
@@ -162,6 +166,32 @@ fn<RegID> regIDFromStr(std.String const* str):
     if str->equals("r9"): return RegID.r9
     if str->equals("r10"): return RegID.r10
     return RegID.none
+
+fn<bool> isRelativeJump(InsCode ic):
+    return ic == InsCode.jrz || ic == InsCode.jrnz || \
+        ic == InsCode.jrgz || ic == InsCode.jrlz || \
+        ic == InsCode.jrge || ic == InsCode.jrle
+
+fn<bool> isAbsoluteJump(InsCode ic):
+    return ic == InsCode.jz || ic == InsCode.jnz || \
+        ic == InsCode.jgz || ic == InsCode.jlz || \
+        ic == InsCode.jge || ic == InsCode.jle
+
+fn<CondID> conditionFromInsCode(InsCode ic):
+    if ic == InsCode.jz || ic == InsCode.jrz:
+        return CondID.z
+    if ic == InsCode.jnz || ic == InsCode.jrnz:
+        return CondID.nz
+    if ic == InsCode.jgz || ic == InsCode.jrgz:
+        return CondID.gz
+    if ic == InsCode.jlz || ic == InsCode.jrlz:
+        return CondID.lz
+    if ic == InsCode.jge || ic == InsCode.jrge:
+        return CondID.ge
+    if ic == InsCode.jle || ic == InsCode.jrle:
+        return CondID.le
+
+    return CondID.none
 
 fn<u64> lineCount(std.String const* code):
     var<u64> count = 1
@@ -331,7 +361,12 @@ fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
 
     var offStr = std.new(std.String)
     var<u8> c
-    while std.isnum(c = data->code->at(data->codeIndex)):
+    if data->code->at(data->codeIndex) == '-':
+        offStr->push_back('-')
+        ++data->codeIndex
+        ++data->column
+
+    while std.isalnum(c = data->code->at(data->codeIndex)):
         ++data->codeIndex
         ++data->column
         offStr->push_back(c)
@@ -353,7 +388,13 @@ fn<bool> parseRegOffset(AssemblerData* data, ArgParseData* apd):
     return true
 
 fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
-    data->instructions[data->nInstructions] |= (((u32)part) & mask) << offset
+    var rawPart = (u32)part
+    var writablePart = (rawPart & mask) << offset
+    
+    var instr = data->instructions[data->nInstructions]
+    instr &= ~(mask << offset)
+    instr |= writablePart
+    data->instructions[data->nInstructions] = instr
 
 fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
     writeInsPart(data, oc, 0b11111, 0)
@@ -361,8 +402,13 @@ fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
 fn<> writeInsDestReg(AssemblerData* data, RegID rid):
     writeInsPart(data, rid, 0b1111, 5)
 
-fn<> writeInsCondition(AssemblerData* data, CondID cid):
+fn<bool> writeInsCondition(AssemblerData* data, CondID cid):
+    if cid == CondID.none:
+        handleAsmError("unknown condition!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
     writeInsPart(data, cid, 0b1111, 5)
+    return true
 
 fn<> writeInsOffsetSelect(AssemblerData* data, i32 os):
     writeInsPart(data, os, 0b1, 9)
@@ -373,7 +419,38 @@ fn<> writeInsSourceReg1(AssemblerData* data, RegID rid):
 fn<> writeInsSourceReg2(AssemblerData* data, RegID rid):
     writeInsPart(data, rid, 0b1111, 14)
 
-fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
+fn<bool> checkOffsetRange(AssemblerData* data, i32 offset, OffsetType ot):
+    var<i32> offMin
+    var<i32> offMax
+    var<u8 const*> otStr
+    if ot == OffsetType.normal:
+        offMin = -8192 \\  -2 ** 13
+        offMax =  8191 \\   2 ** 13 - 1
+        otStr = "normal"
+    elif ot == OffsetType.short:
+        offMin = -4096 \\  -2 ** 12
+        offMax =  4095 \\   2 ** 12 - 1
+        otStr = "short"
+    elif ot == OffsetType.longContinuous || \
+        ot == OffsetType.longSplit:
+        offMin = -131072 \\  -2 ** 17
+        offMax =  131071 \\   2 ** 17 - 1
+        otStr = "long"
+    else:
+        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
+        data->errorOccurred = true
+        return false
+
+    if offset < offMin || offset > offMax:
+        handleAsmError("offset % is out of range for offset type '%'! (Min: %, Max: %)", data->filename, data->line, data->column, data->instructions, offset, otStr, offMin, offMax)
+        data->errorOccurred = true
+        return false
+    return true
+
+fn<bool> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):    
+    if !checkOffsetRange(data, offset, ot):
+        return false
+    
     if ot == OffsetType.normal:
         writeInsPart(data, offset, 0b11111111111111, 18)
     elif ot == OffsetType.short:
@@ -383,6 +460,12 @@ fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
     elif ot == OffsetType.longSplit:
         writeInsPart(data, offset, 0b1111, 5)
         writeInsPart(data, offset >> 5, 0b11111111111111, 18)
+    else:
+        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
+        data->errorOccurred = true
+        return false
+
+    return true
 
 fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
     writeInsPart(data, rj, 0b1, 31)
@@ -408,7 +491,8 @@ fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     writeInsSourceReg1(data, apd.register)
     if apd.hasOffset:
         writeInsOffsetSelect(data, 0)
-        writeInsOffset(data, apd.offset, OffsetType.normal)
+        if !writeInsOffset(data, apd.offset, OffsetType.normal):
+            return false
 
     if !parseRegOffset(data, &apd):
         return false
@@ -416,21 +500,149 @@ fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     writeInsSourceReg2(data, apd.register)
     if apd.hasOffset:
         writeInsOffsetSelect(data, 1)
-        writeInsOffset(data, apd.offset, OffsetType.normal)
+        if !writeInsOffset(data, apd.offset, OffsetType.normal):
+            return false
 
     return true
 
 fn<bool> parseInstructionCondBranch(AssemblerData* data, InsCode ic):
-    return false
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.offset = 0
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+
+    if !writeInsCondition(data, conditionFromInsCode(ic)):
+        return false
+
+    if !parseRegOffset(data, &apd):
+        return false
+
+    writeInsSourceReg1(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 0)
+        if !writeInsOffset(data, apd.offset, OffsetType.short):
+            return false
+
+    if !parseRegOffset(data, &apd):
+        return false
+
+    writeInsSourceReg2(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 1)
+        if !writeInsOffset(data, apd.offset, OffsetType.short):
+            return false
+
+    if isRelativeJump(ic):
+        writeInsRelativeJump(data, 1)
+    else:
+        writeInsRelativeJump(data, 0)
+
+    return true
 
 fn<bool> parseInstructionMemRead(AssemblerData* data, InsCode ic):
-    return false
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.offset = 0
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+
+    if !parseReg(data, &apd):
+        return false
+
+    writeInsDestReg(data, apd.register)
+
+    if !parseRegOffset(data, &apd):
+        return false
+
+    writeInsOffsetSelect(data, 0)
+    
+    writeInsSourceReg1(data, apd.register)
+    if !writeInsOffset(data, apd.offset, OffsetType.longContinuous):
+        return false
+    
+    return true
 
 fn<bool> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
-    return false
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.offset = 0
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+    
+    if !parseRegOffset(data, &apd):
+        return false
+
+    writeInsSourceReg1(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 0)
+        if !writeInsOffset(data, apd.offset, OffsetType.longSplit):
+            return false
+    
+    if !parseRegOffset(data, &apd):
+        return false
+
+    writeInsSourceReg2(data, apd.register)
+    if apd.hasOffset:
+        writeInsOffsetSelect(data, 1)
+        if !writeInsOffset(data, apd.offset, OffsetType.longSplit):
+            return false
+
+    return true
+
+fn<bool> parseImmediate(AssemblerData* data, ArgParseData* apd, bool is16BitBound):
+    var immStr = std.new(std.String)
+    var<u8> c
+    if data->code->at(data->codeIndex) == '-':
+        immStr->push_back('-')
+        ++data->codeIndex
+        ++data->column
+
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        ++data->codeIndex
+        ++data->column
+        immStr->push_back(c)
+    
+    if immStr->beginswith("0x"):
+        apd->offset = std.stoi(immStr->raw() + 2, 16)
+    elif immStr->beginswith("0b"):
+        apd->offset = std.stoi(immStr->raw() + 2, 2)
+    elif immStr->beginswith("0"):
+        apd->offset = std.stoi(immStr->raw() + 1, 8)
+    else:
+        apd->offset = std.stoi(immStr->raw(), 10)
+
+    var<i32> immMin = -4194304 \\ -2 ** 22
+    var<i32> immMax =  4194303 \\ 2 ** 22 - 1
+    if is16BitBound:
+        immMin = -32768 \\ -2 ** 15
+        immMax =  32767 \\ 2 ** 15 - 1
+
+    if apd->offset < immMin || apd->offset > immMax:
+        handleAsmError("immediate value % is out of range (% to %)\n", data->filename, data->line, data->column, data->instructions, apd->offset, immMin, immMax)
+        data->errorOccurred = true
+        return false
+
+    return true
 
 fn<bool> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
-    return false
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.offset = 0
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+    
+    if !parseReg(data, &apd):
+        return false
+
+    writeInsDestReg(data, apd.register)
+
+    if !parseImmediate(data, &apd, ic == InsCode.lui || ic == InsCode.lli):
+        return false
+
+    writeInsImmediate(data, apd.offset)
+
+    return true
 
 fn<bool> parseInstruction(AssemblerData* data):
     var insCode = parseInsCode(data)
