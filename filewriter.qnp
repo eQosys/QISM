@@ -3,33 +3,44 @@ import "fileio.qnp"
 
 import "errorhandler.qnp"
 
+fn<u8*> itos(i64 num, u8* buffer, i64 base, i64 width):
+    var<i64> len = std.strlen(std.itos(num, buffer, base))
+    var<i64> i = len - 1
+    while i >= 0:
+        buffer[width - len + i] = buffer[i]
+        --i
+    i = 0
+    while i < width - len:
+        buffer[i++] = '0'
+    return buffer
+
 fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFormat):
     if outputFormat == OutputFormat.bin:
-        buffer[0] = instruction & 0xFF
-        buffer[1] = (instruction >> 8) & 0xFF
-        buffer[2] = (instruction >> 16) & 0xFF
-        buffer[3] = (instruction >> 24) & 0xFF
+        buffer[0] = (instruction >> 24) & 0xFF
+        buffer[1] = (instruction >> 16) & 0xFF
+        buffer[2] = (instruction >> 8) & 0xFF
+        buffer[3] = (instruction >> 0) & 0xFF
         return 4
     if outputFormat == OutputFormat.bintxt:
-        var<u64> len
-        len = std.strlen(std.itos(instruction & 0xFF, buffer, 2))
+        var<u64> len = 0
+        len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 8) & 0xFF, buffer + len, 2))
+        len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 16) & 0xFF, buffer + len, 2))
+        len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 24) & 0xFF, buffer + len, 2))
+        len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = '\n'
         return len
     if outputFormat == OutputFormat.hextxt:
-        var<u64> len
-        len = std.strlen(std.itos(instruction & 0xFF, buffer, 16))
+        var<u64> len = 0
+        len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 8) & 0xFF, buffer + len, 16))
+        len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 16) & 0xFF, buffer + len, 16))
+        len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = ' '
-        len += std.strlen(std.itos((instruction >> 24) & 0xFF, buffer + len, 16))
+        len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = '\n'
         return len
 
@@ -42,7 +53,7 @@ fn<bool> writeToFile(std.String const* filename, u32 const* instructions, u64 nI
         return handleMsgError("Could not open output file for writing!")
     
     var<u64> i = 0
-    var<u8[48]> buffer
+    var<u8[64]> buffer
     while i < nInstructions:
         var bufferSize = genInstructionBuffer(buffer, instructions[i], outputFormat)
         if bufferSize == 0:

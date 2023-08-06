@@ -443,7 +443,7 @@ fn<bool> parseInstruction(AssemblerData* data):
 
     var insType = insTypeFromOpCode(opCode)
     
-    var success = false
+    var<bool> success
 
     if insType == InsType.threeArg:
         success =  parseInstructionThreeArg(data, insCode)
@@ -458,7 +458,7 @@ fn<bool> parseInstruction(AssemblerData* data):
     else:
         handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
-        return false
+        success = false
 
     if success:
         ++data->nInstructions
