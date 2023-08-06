@@ -78,15 +78,27 @@ pack AssemblerData:
     var<std.String const*> code
     var<std.String const*> filename
     var<bool> verbose
+    var<bool> addAnnotations
     var<u64> line
     var<u64> column
     var<u64> codeIndex
     var<u64> codeLength
     var<u64> nInstructions
     var<u32*> instructions
+    var<std.String**> annotations
     var<u32> parityInstruction
     var<bool> errorOccurred
     var<std.String*> entrypointName
+
+fn<> freeAsmData(AssemblerData* data):
+    std.free(data->instructions)
+    std.free(data->entrypointName)
+    if data->annotations != null:
+        var i = 0
+        while i < data->nInstructions:
+            std.delete(data->annotations[i])
+            ++i
+        std.free(data->annotations)
 
 fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("add"): return InsCode.add
@@ -242,6 +254,11 @@ fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
         data->errorOccurred = true
         return false
 
+    if data->entrypointName != null:
+        handleAsmError("entrypoint already defined!", data->filename, data->line, data->column, data->instructions)
+        data->errorOccurred = true
+        return false
+
     if !parseWhitespace(data):
         handleAsmError("expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
         data->errorOccurred = true
@@ -266,6 +283,9 @@ fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
         return false
 
     data->entrypointName = name
+
+    if data->verbose:
+        std.println("info: entrypoint set to '%'", name->raw())
     
     return true
 
@@ -297,7 +317,12 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
         data->errorOccurred = true
         return false
 
+    var<u32> address = data->nInstructions * 4
+
     \\ TODO: Add label to symbol table
+
+    if data->verbose:
+        std.println("info: label '%' has address %", name->raw(), address)
 
     return true
 
@@ -689,6 +714,8 @@ fn<bool> parseInstructionImmLoad(AssemblerData* data, InsCode ic) nodiscard:
     return true
 
 fn<bool> parseInstruction(AssemblerData* data) nodiscard:
+    var<u64> lineBegin = data->codeIndex
+
     var insCode = parseInsCode(data)
     if insCode == InsCode.none:
         return false
@@ -698,10 +725,8 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     if !writeInsOpCode(data, opCode):
         return false
 
-    var insType = insTypeFromOpCode(opCode)
-    
     var<bool> success
-
+    var insType = insTypeFromOpCode(opCode)
     if insType == InsType.threeArg:
         success =  parseInstructionThreeArg(data, insCode)
     elif insType == InsType.condBranch:
@@ -722,7 +747,11 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
         data->errorOccurred = true
         success = false
 
+    var<u64> lineEnd = data->codeIndex
+
     if success:
+        if data->addAnnotations:
+            data->annotations[data->nInstructions] = std.new(std.String, data->code->raw() + lineBegin, lineEnd - lineBegin)
         ++data->nInstructions
 
     return success
@@ -748,50 +777,53 @@ fn<bool> parseComment(AssemblerData* data) nodiscard:
 
 
 
-fn<u32*> assemble(std.String const* code, std.String const* filename, bool verbose, u64* pnInstructionsOut) nodiscard:
-    var<AssemblerData> data
-    data.code = code
-    data.filename = filename
-    data.verbose = verbose
-    data.line = 1
-    data.column = 1
-    data.codeIndex = 0
-    data.codeLength = code->length()
-    data.nInstructions = 0
-    data.errorOccurred = false
-    data.entrypointName = null
+fn<bool> assemble(AssemblerData* data) nodiscard:
+    data->line = 1
+    data->column = 1
+    data->codeIndex = 0
+    data->codeLength = data->code->length()
+    data->nInstructions = 0
+    data->instructions = null
+    data->annotations = null
+    data->errorOccurred = false
+    data->entrypointName = null
 
-    var buffSize = lineCount(code) * 4
-    if verbose: std.println("Allocating % bytes of instruction memory...", buffSize)
-    data.instructions = (u32*)std.malloc(buffSize)
-    if data.instructions == null:
+    var lc = lineCount(data->code)
+    var buffSize = lc * 4
+    if data->verbose: std.println("info: allocating % bytes of instruction memory...", buffSize)
+    data->instructions = (u32*)std.malloc(buffSize)
+    if data->instructions == null:
         handleMsgError("failed to allocate instruction memory")
-        return null
+        return false
 
-    while data.codeIndex < data.codeLength:
-        parseWhitespace(&data)
+    if data->addAnnotations:
+        std.println("info: allocating % bytes of instruction line memory...", lc * sizeof(std.String*))
+        data->annotations = (std.String**)std.malloc(lc * sizeof(std.String*))
+        if data->annotations == null:
+            handleMsgError("failed to allocate instruction line memory")
+            return false
 
-        if parseNewline(&data): continue
-        if data.errorOccurred: break
+    while data->codeIndex < data->codeLength:
+        parseWhitespace(data)
+
+        if parseNewline(data): continue
+        if data->errorOccurred: break
         
-        if parseEntrypoint(&data): continue
-        if data.errorOccurred: break
+        if parseEntrypoint(data): continue
+        if data->errorOccurred: break
         
-        if parseLabel(&data): continue
-        if data.errorOccurred: break
+        if parseLabel(data): continue
+        if data->errorOccurred: break
         
-        if parseInstruction(&data): continue
-        if data.errorOccurred: break
+        if parseInstruction(data): continue
+        if data->errorOccurred: break
         
-        if parseComment(&data): continue
-        if data.errorOccurred: break
+        if parseComment(data): continue
+        if data->errorOccurred: break
         
-        return handleAsmError("unexpected character!", data.filename, data.line, data.column, data.instructions)
+        return handleAsmError("unexpected character!", data->filename, data->line, data->column, data->instructions)
     
-    if data.errorOccurred:
-        std.free(data.instructions)
-        return null
+    if data->errorOccurred:
+        return false
 
-    *pnInstructionsOut = data.nInstructions
-
-    return data.instructions
+    return true

@@ -1,5 +1,6 @@
 import "outputformat.qnp"
 import "fileio.qnp"
+import "assembler.qnp"
 
 import "errorhandler.qnp"
 
@@ -31,7 +32,6 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = ' '
         len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 2, 8))
-        buffer[len++] = '\n'
         return len
     if outputFormat == OutputFormat.hextxt:
         var<u64> len = 0
@@ -42,26 +42,42 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = ' '
         len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 16, 2))
-        buffer[len++] = '\n'
         return len
 
     handleMsgError("Invalid output format!")
     return 0
 
-fn<bool> writeToFile(std.String const* filename, u32 const* instructions, u64 nInstructions, OutputFormat outputFormat):
+fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, OutputFormat outputFormat):
     var file = std.new(std.File, filename->raw(), "w")
     if file == null:
         return handleMsgError("Could not open output file for writing!")
     
     var<u64> i = 0
     var<u8[64]> buffer
-    while i < nInstructions:
-        var bufferSize = genInstructionBuffer(buffer, instructions[i], outputFormat)
+    while i < data->nInstructions:
+        var bufferSize = genInstructionBuffer(buffer, data->instructions[i], outputFormat)
         if bufferSize == 0:
             std.delete(file)
             return false
 
         if file->write(buffer, bufferSize) != bufferSize:
+            std.delete(file)
+            return handleMsgError("Could not write to output file!")
+
+        if data->addAnnotations && outputFormat != OutputFormat.bin:
+            static annotationBegin = "    // "
+            static annotationBeginLength = std.strlen(annotationBegin)
+            var annotation = data->annotations[i]
+            var annotationLength = annotation->length()
+            if file->write(annotationBegin, annotationBeginLength) != annotationBeginLength:
+                std.delete(file)
+                return handleMsgError("Could not write to output file!")
+
+            if file->write(annotation->raw(), annotationLength) != annotationLength:
+                std.delete(file)
+                return handleMsgError("Could not write to output file!")
+        
+        if outputFormat != OutputFormat.bin && file->write("\n", 1) != 1:
             std.delete(file)
             return handleMsgError("Could not write to output file!")
         ++i
