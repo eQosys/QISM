@@ -202,11 +202,11 @@ asmData.filename = inputFilename
 asmData.code = codeText
 asmData.verbose = verbose
 asmData.addAnnotations = addAnnotations
-if !assemble(&asmData):
-    std.delete(codeText)
-    std.delete(inputFilename)
-    std.delete(outputFilename)
-    std.exit(1)
+
+assemble(&asmData)
+
+if verbose:
+    std.println("info: # of instructions: %", asmData.nInstructions)
 
 if verbose: std.println("Writing output file...")
 if !writeToFile(outputFilename, &asmData, outputFormat):
