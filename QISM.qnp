@@ -87,10 +87,8 @@ fn<std.String*> readFile(std.String const* filename):
         handleMsgError("Could not read file!")
         std.free(buffer)
         return null
-    
-    buffer[size] = 0
 
-    var str = std.new(std.String, buffer)
+    var str = std.new(std.String, buffer, size)
     if str == null:
         handleMsgError("Could not allocate memory for file reading!")
         std.free(buffer)
@@ -110,6 +108,8 @@ fn<> printHelp():
     std.println("  -f=<format>         output format")
     std.println("                       default: bin")
     std.println("                       options: bintxt, hextxt")
+    std.println("  -a                  add annotations to output file")
+    std.println("                       ignored if output format is bin")
 
 \\ Option variables
 var<std.String*> inputFilename = null

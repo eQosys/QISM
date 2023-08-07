@@ -451,12 +451,6 @@ fn<bool> writeInsCondition(AssemblerData* data, CondID cid) nodiscard:
 fn<bool> writeInsOffsetSelect(AssemblerData* data, i32 os) nodiscard:
     return writeInsPart(data, os, 0b1, 9)
 
-fn<bool> writeInsSourceReg1(AssemblerData* data, RegID rid) nodiscard:
-    return writeInsPart(data, rid, 0b1111, 10)
-
-fn<bool> writeInsSourceReg2(AssemblerData* data, RegID rid) nodiscard:
-    return writeInsPart(data, rid, 0b1111, 14)
-
 fn<bool> checkOffsetRange(AssemblerData* data, i32 offset, OffsetType ot) nodiscard:
     var<i32> offMin
     var<i32> offMax
@@ -510,6 +504,44 @@ fn<bool> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot) nodiscar
 
     return true
 
+fn<bool> writeInsAutoOffset(AssemblerData* data, ArgParseData const* apd, i32 os, OffsetType ot) nodiscard:
+    if !apd->hasOffset:
+        return true
+    
+    if !writeInsOffsetSelect(data, os):
+        return false
+
+    if !writeInsOffset(data, apd->offset, ot):
+        return false
+
+    return true
+
+fn<bool> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd, OffsetType ot) nodiscard:
+    if apd->offsetAlreadyUsed:
+        return true
+    
+    if !writeInsOffsetSelect(data, 0):
+        return false
+    if !writeInsOffset(data, 0, ot):
+        return false
+
+    return true
+
+fn<bool> writeInsSourceReg1(AssemblerData* data, ArgParseData const* apd, OffsetType ot) nodiscard:
+    if !writeInsPart(data, apd->register, 0b1111, 10):
+        return false
+    if !writeInsAutoOffset(data, apd, 0b0, ot):
+        return false
+    return true
+
+fn<bool> writeInsSourceReg2(AssemblerData* data, ArgParseData const* apd, OffsetType ot) nodiscard:
+    if !writeInsPart(data, apd->register, 0b1111, 14):
+        return false
+    if !writeInsAutoOffset(data, apd, 0b1, ot):
+        return false
+    return true
+
+
 fn<bool> writeInsRelativeJump(AssemblerData* data, i32 rj) nodiscard:
     return writeInsPart(data, rj, 0b1, 31)
 
@@ -532,30 +564,17 @@ fn<bool> parseInstructionThreeArg(AssemblerData* data, InsCode ic) nodiscard:
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg1(data, apd.register):
+    if !writeInsSourceReg1(data, &apd, OffsetType.normal):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 0):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.normal):
-            return false
 
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg2(data, apd.register):
+    if !writeInsSourceReg2(data, &apd, OffsetType.normal):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 1):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.normal):
-            return false
 
-    if !apd.offsetAlreadyUsed:
-        if !writeInsOffsetSelect(data, 0):
-            return false
-        if !writeInsOffset(data, 0, OffsetType.normal):
-            return false
+    if !writeInsAutoFillOffset(data, &apd, OffsetType.normal):
+        return false
 
     return true
 
@@ -572,24 +591,17 @@ fn<bool> parseInstructionCondBranch(AssemblerData* data, InsCode ic) nodiscard:
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg1(data, apd.register):
+    if !writeInsSourceReg1(data, &apd, OffsetType.short):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 0):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.short):
-            return false
 
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg2(data, apd.register):
+    if !writeInsSourceReg2(data, &apd, OffsetType.short):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 1):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.short):
-            return false
+
+    if !writeInsAutoFillOffset(data, &apd, OffsetType.short):
+        return false
 
     if isRelativeJump(ic):
         if !writeInsRelativeJump(data, 1):
@@ -619,9 +631,7 @@ fn<bool> parseInstructionMemRead(AssemblerData* data, InsCode ic) nodiscard:
     if !writeInsOffsetSelect(data, 0):
         return false
     
-    if !writeInsSourceReg1(data, apd.register):
-        return false
-    if !writeInsOffset(data, apd.offset, OffsetType.longContinuous):
+    if !writeInsSourceReg1(data, &apd, OffsetType.longContinuous):
         return false
     
     return true
@@ -636,24 +646,17 @@ fn<bool> parseInstructionMemWrite(AssemblerData* data, InsCode ic) nodiscard:
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg1(data, apd.register):
+    if !writeInsSourceReg1(data, &apd, OffsetType.longSplit):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 0):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.longSplit):
-            return false
     
     if !parseRegOffset(data, &apd):
         return false
 
-    if !writeInsSourceReg2(data, apd.register):
+    if !writeInsSourceReg2(data, &apd, OffsetType.longSplit):
         return false
-    if apd.hasOffset:
-        if !writeInsOffsetSelect(data, 1):
-            return false
-        if !writeInsOffset(data, apd.offset, OffsetType.longSplit):
-            return false
+
+    if !writeInsAutoFillOffset(data, &apd, OffsetType.longSplit):
+        return false
 
     return true
 
