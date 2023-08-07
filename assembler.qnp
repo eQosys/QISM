@@ -246,6 +246,24 @@ fn<bool> parseNewline(AssemblerData* data) nodiscard:
     data->column = 1
     return true
 
+fn<std.String*> parseAlNum(AssemblerData* data, bool allowNegative) nodiscard:
+    var str = std.new(std.String)
+    var isNegative = false
+
+    if allowNegative && data->code->at(data->codeIndex) == '-':
+        str->push_back('-')
+        ++data->codeIndex
+        ++data->column
+        isNegative = true
+
+    var<u8> c
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        str->push_back(c)
+        ++data->codeIndex
+        ++data->column
+
+    return str
+
 fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
     if !parseExact(data, "."):
         return false
@@ -262,12 +280,7 @@ fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
         handleAsmError("expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    var<u8> c
-    var name = std.new(std.String)
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
-        name->push_back(c)
+    var name = parseAlNum(data, false)
 
     if name->length() == 0:
         handleAsmError("expected entrypoint name!", data->filename, data->line, data->column, data->instructions)
@@ -293,13 +306,7 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
         handleAsmError("expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    var<u8> c
-    var name = std.new(std.String)
-
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
-        name->push_back(c)
+    var name = parseAlNum(data, false)
 
     if name->length() == 0:
         handleAsmError("expected label name!", data->filename, data->line, data->column, data->instructions)
@@ -324,22 +331,18 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
     return true
 
 fn<InsCode> parseInsCode(AssemblerData* data) nodiscard:
-    var insStr = std.new(std.String)
+    var oldIndex = data->codeIndex
+    var oldColumn = data->column
 
-    var<u8> c
-    var<u64> i = 0
-    while std.isalnum(c = data->code->at(data->codeIndex + i)):
-        insStr->push_back(c)
-        ++i
+    var insStr = parseAlNum(data, false)
 
     var insCode = insCodeFromStr(insStr)
     std.delete(insStr)
 
     if insCode == InsCode.none:
+        data->codeIndex = oldIndex
+        data->column = oldColumn
         return InsCode.none
-
-    data->codeIndex += i
-    data->column += i
 
     return insCode
 
@@ -348,12 +351,7 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
         handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    var name = std.new(std.String)
-    var<u8> c
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
-        name->push_back(c)
+    var name = parseAlNum(data, true)
 
     apd->register = regIDFromStr(name)
     std.delete(name)
@@ -362,41 +360,66 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
         handleAsmError("expected register name!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-fn<i32> parseLiteral(AssemblerData* data):
-    var str = std.new(std.String)
+fn<i32> parseLiteral(AssemblerData* data) nodiscard:
+    enum LiteralMode:
+        Default,
+        Upper,
+        Lower,
+        Relative
 
-    var<u8> c
-    if data->code->at(data->codeIndex) == '-':
-        str->push_back('-')
-        ++data->codeIndex
-        ++data->column
+    var lm = LiteralMode.Default
 
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        str->push_back(c)
-        ++data->codeIndex
-        ++data->column
+    var str = parseAlNum(data, true)
+
+    if str->equals("upr"):
+        lm = LiteralMode.Upper
+        std.delete(str)
+        if !parseWhitespace(data):
+            handleAsmError("expected whitespace after 'upr'!", data->filename, data->line, data->column, data->instructions)
+            std.exit(1)
+        str = parseAlNum(data, true)
+    elif str->equals("lwr"):
+        lm = LiteralMode.Lower
+        std.delete(str)
+        if !parseWhitespace(data):
+            handleAsmError("expected whitespace after 'lwr'!", data->filename, data->line, data->column, data->instructions)
+            std.exit(1)
+        str = parseAlNum(data, true)
+    elif str->equals("rel"):
+        lm = LiteralMode.Relative
+        std.delete(str)
+        if !parseWhitespace(data):
+            handleAsmError("expected whitespace after 'rel'!", data->filename, data->line, data->column, data->instructions)
+            std.exit(1)
+        str = parseAlNum(data, true)
 
     var<i32> result
 
     if data->labels->contains(std.new(std.String, str)):
         result = (i32)data->labels->get(str)
         std.delete(str)
-        return result
-
-    std.error.clear()
-
-    if str->beginswith("0x"):
-        result = std.stoi(str->raw() + 2, 16)
-    elif str->beginswith("0b"):
-        result = std.stoi(str->raw() + 2, 2)
-    elif str->beginswith("0"):
-        result = std.stoi(str->raw() + 1, 8)
     else:
-        result = std.stoi(str->raw(), 10)
+        std.error.clear()
 
-    if std.error.get() != std.error.ID.Success:
-        handleAsmError("invalid literal '%'", data->filename, data->line, data->column, data->instructions, str->raw())
-        std.exit(1)
+        if str->beginswith("0x"):
+            result = std.stoi(str->raw() + 2, 16)
+        elif str->beginswith("0b"):
+            result = std.stoi(str->raw() + 2, 2)
+        elif str->beginswith("0"):
+            result = std.stoi(str->raw() + 1, 8)
+        else:
+            result = std.stoi(str->raw(), 10)
+
+        if std.error.get() != std.error.ID.Success:
+            handleAsmError("invalid literal '%'", data->filename, data->line, data->column, data->instructions, str->raw())
+            std.exit(1)
+
+    if lm == LiteralMode.Upper:
+        result = (result >> 16) & 0xFFFF
+    elif lm == LiteralMode.Lower:
+        result = result & 0xFFFF
+    elif lm == LiteralMode.Relative:
+        result -= (data->nInstructions * 4)
 
     return result
 
