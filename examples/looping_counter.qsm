@@ -6,4 +6,4 @@
 xor r0 r0 r0
 ::loop
 add r0 r0 zero(1)
-jrz zero(-4) zero
+jz zero(loop) zero

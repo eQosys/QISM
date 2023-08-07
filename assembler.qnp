@@ -1,5 +1,6 @@
 import "string.qnp"
 import "stdio.qnp"
+import "map.qnp"
 
 import "errorhandler.qnp"
 
@@ -88,6 +89,7 @@ pack AssemblerData:
     var<std.String**> annotations
     var<u32> parityInstruction
     var<std.String*> entrypointName
+    var<std.Map*> labels
 
 fn<> freeAsmData(AssemblerData* data):
     std.free(data->instructions)
@@ -310,7 +312,11 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
 
     var<u32> address = data->nInstructions * 4
 
-    \\ TODO: Add label to symbol table
+    if data->labels->contains(name):
+        handleAsmError("label '%' already defined!", data->filename, data->line, data->column, data->instructions, name->raw())
+        std.exit(1)
+
+    data->labels->insert(name, (void*)address)
 
     if data->verbose:
         std.println("info: label '%' has address %", name->raw(), address)
@@ -356,6 +362,44 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
         handleAsmError("expected register name!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
+fn<i32> parseLiteral(AssemblerData* data):
+    var str = std.new(std.String)
+
+    var<u8> c
+    if data->code->at(data->codeIndex) == '-':
+        str->push_back('-')
+        ++data->codeIndex
+        ++data->column
+
+    while std.isalnum(c = data->code->at(data->codeIndex)):
+        str->push_back(c)
+        ++data->codeIndex
+        ++data->column
+
+    var<i32> result
+
+    if data->labels->contains(std.new(std.String, str)):
+        result = (i32)data->labels->get(str)
+        std.delete(str)
+        return result
+
+    std.error.clear()
+
+    if str->beginswith("0x"):
+        result = std.stoi(str->raw() + 2, 16)
+    elif str->beginswith("0b"):
+        result = std.stoi(str->raw() + 2, 2)
+    elif str->beginswith("0"):
+        result = std.stoi(str->raw() + 1, 8)
+    else:
+        result = std.stoi(str->raw(), 10)
+
+    if std.error.get() != std.error.ID.Success:
+        handleAsmError("invalid literal '%'", data->filename, data->line, data->column, data->instructions, str->raw())
+        std.exit(1)
+
+    return result
+
 fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd):
     parseReg(data, apd)
 
@@ -369,27 +413,7 @@ fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd):
 
     apd->offsetAlreadyUsed = true
     apd->hasOffset = true
-
-    var offStr = std.new(std.String)
-    var<u8> c
-    if data->code->at(data->codeIndex) == '-':
-        offStr->push_back('-')
-        ++data->codeIndex
-        ++data->column
-
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
-        offStr->push_back(c)
-
-    if offStr->beginswith("0x"):
-        apd->offset = std.stoi(offStr->raw() + 2, 16)
-    elif offStr->beginswith("0b"):
-        apd->offset = std.stoi(offStr->raw() + 2, 2)
-    elif offStr->beginswith("0"):
-        apd->offset = std.stoi(offStr->raw() + 1, 8)
-    else:
-        apd->offset = std.stoi(offStr->raw(), 10)
+    apd->offset = parseLiteral(data)
 
     if !parseExact(data, ")"):
         handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
@@ -569,28 +593,7 @@ fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
     writeInsAutoFillOffset(data, &apd, OffsetType.longSplit)
 
 fn<> parseImmediate(AssemblerData* data, ArgParseData* apd, bool is16BitBound):
-    var immStr = std.new(std.String)
-    var<u8> c
-    if data->code->at(data->codeIndex) == '-':
-        immStr->push_back('-')
-        ++data->codeIndex
-        ++data->column
-
-    while std.isalnum(c = data->code->at(data->codeIndex)):
-        ++data->codeIndex
-        ++data->column
-        immStr->push_back(c)
-    
-    if immStr->beginswith("0x"):
-        apd->offset = std.stoi(immStr->raw() + 2, 16)
-    elif immStr->beginswith("0b"):
-        apd->offset = std.stoi(immStr->raw() + 2, 2)
-    elif immStr->beginswith("0"):
-        apd->offset = std.stoi(immStr->raw() + 1, 8)
-    else:
-        apd->offset = std.stoi(immStr->raw(), 10)
-
-    std.delete(immStr)
+    apd->offset = parseLiteral(data)
 
     var<i32> immMin = -4194304 \\ -2 ** 22
     var<i32> immMax =  4194303 \\ 2 ** 22 - 1
@@ -682,6 +685,14 @@ fn<> assemble(AssemblerData* data):
     data->instructions = null
     data->annotations = null
     data->entrypointName = null
+    data->labels = std.new(std.Map, \
+        lambda<bool>(void const* a, void const* b): \
+            return ((std.String const*)a)->compare((std.String const*)b) == std.Order.Less;, \
+        lambda<void>(void* key): \
+            std.delete((std.String*)key);, \
+        lambda<void>(void* value): \
+            pass; \
+        )
 
     var lc = lineCount(data->code)
     var buffSize = lc * 4
