@@ -26,21 +26,21 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
     if outputFormat == OutputFormat.bintxt:
         var<u64> len = 0
         len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 2, 8))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 2, 8))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 2, 8))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 2, 8))
         return len
     if outputFormat == OutputFormat.hextxt:
         var<u64> len = 0
         len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 16, 2))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 16, 2))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 16, 2))
-        buffer[len++] = ' '
+        buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 16, 2))
         return len
 
