@@ -248,13 +248,11 @@ fn<bool> parseNewline(AssemblerData* data) nodiscard:
 
 fn<std.String*> parseAlNum(AssemblerData* data, bool allowNegative) nodiscard:
     var str = std.new(std.String)
-    var isNegative = false
 
     if allowNegative && data->code->at(data->codeIndex) == '-':
         str->push_back('-')
         ++data->codeIndex
         ++data->column
-        isNegative = true
 
     var<u8> c
     while std.isalnum(c = data->code->at(data->codeIndex)):
@@ -351,7 +349,7 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
         handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    var name = parseAlNum(data, true)
+    var name = parseAlNum(data, false)
 
     apd->register = regIDFromStr(name)
     std.delete(name)
@@ -395,7 +393,7 @@ fn<i32> parseLiteral(AssemblerData* data) nodiscard:
 
     var<i32> result
 
-    if data->labels->contains(std.new(std.String, str)):
+    if data->labels->contains(str):
         result = (i32)data->labels->get(str)
         std.delete(str)
     else:
@@ -677,6 +675,10 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
         data->annotations[data->nInstructions] = std.new(std.String, data->code->raw() + lineBegin, lineEnd - lineBegin)
     ++data->nInstructions
 
+    if !parseNewline(data):
+        handleAsmError("expected newline after instruction", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
     return true
 
 fn<bool> parseComment(AssemblerData* data) nodiscard:
@@ -687,13 +689,13 @@ fn<bool> parseComment(AssemblerData* data) nodiscard:
         handleAsmError("expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    var<u8> c
-
-    while (c = data->code->at(data->codeIndex)) != '\n' && c != '\0':
+    while data->code->at(data->codeIndex) != '\n':
         ++data->codeIndex
         ++data->column
 
-    var _ = parseNewline(data)
+    if !parseNewline(data):
+        handleAsmError("expected newline after comment", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
 
     return true
 
@@ -718,16 +720,17 @@ fn<> assemble(AssemblerData* data):
         )
 
     var lc = lineCount(data->code)
-    var buffSize = lc * 4
-    if data->verbose: std.println("info: allocating % bytes of instruction memory...", buffSize)
-    data->instructions = (u32*)std.malloc(buffSize)
+    var instrBuffSize = lc * 4
+    if data->verbose: std.println("info: allocating % bytes of instruction memory...", instrBuffSize)
+    data->instructions = (u32*)std.malloc(instrBuffSize)
     if data->instructions == null:
         handleMsgError("failed to allocate instruction memory")
         std.exit(1)
 
     if data->addAnnotations:
-        std.println("info: allocating % bytes of instruction line memory...", lc * sizeof(std.String*))
-        data->annotations = (std.String**)std.malloc(lc * sizeof(std.String*))
+        var annotBuffSize = lc * sizeof(std.String*)
+        if data->verbose: std.println("info: allocating % bytes of instruction line memory...", annotBuffSize)
+        data->annotations = (std.String**)std.malloc(annotBuffSize)
         if data->annotations == null:
             handleMsgError("failed to allocate instruction line memory")
             std.exit(1)
@@ -742,4 +745,8 @@ fn<> assemble(AssemblerData* data):
         if parseComment(data): continue
         
         handleAsmError("unexpected character!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    if data->entrypointName == null:
+        handleMsgError("no entrypoint specified!")
         std.exit(1)
