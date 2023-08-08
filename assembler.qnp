@@ -718,7 +718,6 @@ fn<> insertLiterals(AssemblerData* data):
     var nInstructionsBackup = data->nInstructions
 
     while !data->literals->empty():
-        std.println("Getting literal info...")
         var litInfo = data->literals->pop_front({LiteralInfo*})
 
         data->line = litInfo->line
