@@ -507,7 +507,7 @@ fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
         writeInsPart(data, offset, 0b111111111111111111, 14)
     elif ot == OffsetType.longSplit:
         writeInsPart(data, offset, 0b1111, 5)
-        writeInsPart(data, offset >> 5, 0b11111111111111, 18)
+        writeInsPart(data, offset >> 4, 0b11111111111111, 18)
     else:
         handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
         std.exit(1)
