@@ -9,6 +9,7 @@ enum InsCode:
     none,
     add, sub,
     and, or, xor,
+    shl, shr,
     jz, jnz, jgz, jlz, jge, jle,
     jrz, jrnz, jrgz, jrlz, jrge, jrle,
     st, ld,
@@ -21,12 +22,14 @@ enum OpCode:
     and  = 0b00010,
     or   = 0b00011,
     xor  = 0b00100,
-    jxx  = 0b00101,
-    st   = 0b00110,
-    ld   = 0b00111,
-    lui  = 0b01000,
-    lli  = 0b01001,
-    li   = 0b01010
+    shl  = 0b00101,
+    shr  = 0b00110,
+    jxx  = 0b00111,
+    st   = 0b01000,
+    ld   = 0b01001,
+    lui  = 0b01010,
+    lli  = 0b01011,
+    li   = 0b01100
 
 enum InsType:
     none,
@@ -151,6 +154,8 @@ fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("and"): return InsCode.and
     if str->equals("or"): return InsCode.or
     if str->equals("xor"): return InsCode.xor
+    if str->equals("shl"): return InsCode.shl
+    if str->equals("shr"): return InsCode.shr
     if str->equals("jz"): return InsCode.jz
     if str->equals("jnz"): return InsCode.jnz
     if str->equals("jgz"): return InsCode.jgz
@@ -176,6 +181,8 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.and: return OpCode.and
     if ic == InsCode.or: return OpCode.or
     if ic == InsCode.xor: return OpCode.xor
+    if ic == InsCode.shl: return OpCode.shl
+    if ic == InsCode.shr: return OpCode.shr
     if ic == InsCode.jz || ic == InsCode.jnz || \
         ic == InsCode.jgz || ic == InsCode.jlz || \
         ic == InsCode.jge || ic == InsCode.jle || \
@@ -192,7 +199,8 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
 
 fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
     if oc == OpCode.add || oc == OpCode.sub || \
-        oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor:
+        oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor || \
+        oc == OpCode.shl || oc == OpCode.shr:
         return InsType.threeArg
     if oc == OpCode.jxx:
         return InsType.condBranch
