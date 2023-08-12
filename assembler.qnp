@@ -376,7 +376,7 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
     data->labels->insert(name, (void*)address)
 
     if data->verbose:
-        std.println("info: label '%' has address %", name->raw(), address)
+        std.println("info: label '%' has address 0x%x", name->raw(), address)
 
     return true
 
