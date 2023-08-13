@@ -53,9 +53,9 @@ enum RegID:
     r5   = 0b1010,
     r6   = 0b1011,
     r7   = 0b1100,
-    r8   = 0b1101,
-    r9   = 0b1110,
-    r10  = 0b1111,
+    rinp = 0b1101,
+    rssd = 0b1110,
+    rled = 0b1111,
     none = 0b11111
 
 enum CondID:
@@ -228,9 +228,9 @@ fn<RegID> regIDFromStr(std.String const* str) nodiscard:
     if str->equals("r5"): return RegID.r5
     if str->equals("r6"): return RegID.r6
     if str->equals("r7"): return RegID.r7
-    if str->equals("r8"): return RegID.r8
-    if str->equals("r9"): return RegID.r9
-    if str->equals("r10"): return RegID.r10
+    if str->equals("rinp"): return RegID.rinp
+    if str->equals("rssd"): return RegID.rssd
+    if str->equals("rled"): return RegID.rled
     return RegID.none
 
 fn<bool> isRelativeJump(InsCode ic) nodiscard:
