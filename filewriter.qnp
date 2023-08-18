@@ -54,6 +54,18 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
     
     var<u64> i = 0
     var<u8[64]> buffer
+
+    var<u32> fileSize = 4 + (data->nInstructions * 4)
+
+    if outputFormat == OutputFormat.bin:
+        buffer[0] = (fileSize >> 24) & 0xFF
+        buffer[1] = (fileSize >> 16) & 0xFF
+        buffer[2] = (fileSize >> 8) & 0xFF
+        buffer[3] = (fileSize >> 0) & 0xFF
+        if file->write(buffer, 4) != 4:
+            std.delete(file)
+            return handleMsgError("Could not write to output file!")
+
     while i < data->nInstructions:
         var bufferSize = genInstructionBuffer(buffer, data->instructions[i], outputFormat)
         if bufferSize == 0:

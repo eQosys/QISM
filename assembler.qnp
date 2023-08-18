@@ -13,7 +13,8 @@ enum InsCode:
     jz, jnz, jgz, jlz, jge, jle,
     jrz, jrnz, jrgz, jrlz, jrge, jrle,
     st, ld,
-    lui, lli, li
+    lui, lli, li,
+    int
 
 enum OpCode:
     none = 0b111111,
@@ -29,7 +30,8 @@ enum OpCode:
     ld   = 0b01001,
     lui  = 0b01010,
     lli  = 0b01011,
-    li   = 0b01100
+    li   = 0b01100,
+    int  = 0b01101
 
 enum InsType:
     none,
@@ -173,6 +175,7 @@ fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("lui"): return InsCode.lui
     if str->equals("lli"): return InsCode.lli
     if str->equals("li"): return InsCode.li
+    if str->equals ("int"): return InsCode.int
     return InsCode.none
 
 fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
@@ -195,6 +198,7 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.lui: return OpCode.lui
     if ic == InsCode.lli: return OpCode.lli
     if ic == InsCode.li: return OpCode.li
+    if ic == InsCode.int: return OpCode.int
     return OpCode.none
 
 fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
@@ -208,7 +212,7 @@ fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
         return InsType.memWrite
     if oc == OpCode.ld:
         return InsType.memRead
-    if oc == OpCode.lui || oc == OpCode.lli || oc == OpCode.li:
+    if oc == OpCode.lui || oc == OpCode.lli || oc == OpCode.li || oc == OpCode.int:
         return InsType.immLoad
 
     handleMsgError("(internal): unknown opcode!")
