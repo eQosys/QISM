@@ -603,14 +603,12 @@ fn<> parseInstructionMemRead(AssemblerData* data, InsCode ic):
     apd.offsetAlreadyUsed = false
 
     parseReg(data, &apd)
-
     writeInsDestReg(data, apd.register)
 
     parseRegOffset(data, &apd, OffsetType.longContinuous)
-
-    writeInsOffsetSelect(data, 0)
-    
     writeInsSourceReg1(data, &apd)
+
+    writeInsAutoFillOffset(data, &apd, OffsetType.longContinuous)
 
 fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
