@@ -627,6 +627,9 @@ fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
     writeInsAutoFillOffset(data, &apd, OffsetType.longSplit)
 
 fn<> parseImmediate(AssemblerData* data, ArgParseData* apd, bool is16BitBound):
+    if !parseWhitespace(data):
+        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
     parseLiteral(data, is16BitBound ? LiteralInsertMode.imm16 : LiteralInsertMode.imm23)
 
 fn<> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
