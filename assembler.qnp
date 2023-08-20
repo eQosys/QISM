@@ -14,10 +14,15 @@ enum InsCode:
     jrz, jrnz, jrgz, jrlz, jrge, jrle,
     st, ld,
     lui, lli, li,
-    int
+    int,
+    not, neg,
+    inc, dec,
+    jmp, jpr,
+    mov
 
 enum OpCode:
-    none = 0b111111,
+    none     = 0b111111,
+    insAlias = 0b111110,
     add  = 0b00000,
     sub  = 0b00001,
     and  = 0b00010,
@@ -39,7 +44,8 @@ enum InsType:
     condBranch,
     memRead,
     memWrite,
-    immLoad
+    immLoad,
+    insAlias
 
 enum RegID:
     zero = 0b0000,
@@ -175,7 +181,14 @@ fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("lui"): return InsCode.lui
     if str->equals("lli"): return InsCode.lli
     if str->equals("li"): return InsCode.li
-    if str->equals ("int"): return InsCode.int
+    if str->equals("int"): return InsCode.int
+    if str->equals("not"): return InsCode.not
+    if str->equals("neg"): return InsCode.neg
+    if str->equals("inc"): return InsCode.inc
+    if str->equals("dec"): return InsCode.dec
+    if str->equals("jmp"): return InsCode.jmp
+    if str->equals("jpr"): return InsCode.jpr
+    if str->equals("mov"): return InsCode.mov
     return InsCode.none
 
 fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
@@ -199,6 +212,11 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.lli: return OpCode.lli
     if ic == InsCode.li: return OpCode.li
     if ic == InsCode.int: return OpCode.int
+    if ic == InsCode.not || ic == InsCode.neg || \
+        ic == InsCode.inc || ic == InsCode.dec || \
+        ic == InsCode.jmp || ic == InsCode.jpr || \
+        ic == InsCode.mov:
+        return OpCode.insAlias
     return OpCode.none
 
 fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
@@ -214,6 +232,8 @@ fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
         return InsType.memRead
     if oc == OpCode.lui || oc == OpCode.lli || oc == OpCode.li || oc == OpCode.int:
         return InsType.immLoad
+    if oc == OpCode.insAlias:
+        return InsType.insAlias
 
     handleMsgError("(internal): unknown opcode!")
     return InsType.none
@@ -414,15 +434,20 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
         handleAsmError("expected register name!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
-    var litInfo = (LiteralInfo*)std.malloc(sizeof(LiteralInfo))
+    apd->hasOffset = false
 
-    litInfo->mode = LiteralMode.Default
-    litInfo->insertMode = lim
-    litInfo->insIndex = data->nInstructions
-    litInfo->line = data->line
-    litInfo->column = data->column
-    litInfo->label = null
+fn<LiteralInfo*> makeLitInfo(AssemblerData const* data, LiteralInsertMode lim):
+    var li = (LiteralInfo*)std.malloc(sizeof(LiteralInfo))
+    li->mode = LiteralMode.Default
+    li->insertMode = lim
+    li->insIndex = data->nInstructions
+    li->line = data->line
+    li->column = data->column
+    li->label = null
+    return li
+
+fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
+    var litInfo = makeLitInfo(data, lim)
 
     var str = parseAlNum(data, true)
 
@@ -641,6 +666,119 @@ fn<> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
 
     parseImmediate(data, &apd, ic == InsCode.lui || ic == InsCode.lli)
 
+fn<> parseInstructionAlias(AssemblerData* data, InsCode ic):
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+    
+    if ic == InsCode.not:
+        writeInsOpCode(data, OpCode.xor)
+
+        parseReg(data, &apd)
+        writeInsDestReg(data, apd.register)
+        parseReg(data, &apd)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = true
+        apd.offsetAlreadyUsed = true
+        writeInsSourceReg2(data, &apd)
+
+        writeInsOffset(data, -1, OffsetType.normal)
+    elif ic == InsCode.neg:
+        writeInsOpCode(data, OpCode.sub)
+
+        parseReg(data, &apd)
+        writeInsDestReg(data, apd.register)
+
+        apd.register = RegID.zero
+        apd.hasOffset = false
+        apd.offsetAlreadyUsed = false
+        writeInsSourceReg1(data, &apd)
+
+        parseRegOffset(data, &apd, OffsetType.normal)
+        writeInsSourceReg2(data, &apd)
+
+        writeInsAutoFillOffset(data, &apd, OffsetType.normal)
+    elif ic == InsCode.inc:
+        writeInsOpCode(data, OpCode.add)
+
+        parseReg(data, &apd)
+        writeInsDestReg(data, apd.register)
+
+        parseReg(data, &apd)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = true
+        apd.offsetAlreadyUsed = true
+        writeInsSourceReg2(data, &apd)
+
+        writeInsOffset(data, 1, OffsetType.normal)
+    elif ic == InsCode.dec:
+        writeInsOpCode(data, OpCode.sub)
+
+        parseReg(data, &apd)
+        writeInsDestReg(data, apd.register)
+
+        parseReg(data, &apd)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = true
+        apd.offsetAlreadyUsed = true
+        writeInsSourceReg2(data, &apd)
+
+        writeInsOffset(data, 1, OffsetType.normal)
+    elif ic == InsCode.jmp:
+        writeInsOpCode(data, OpCode.jxx)
+
+        writeInsCondition(data, CondID.z)
+
+        parseRegOffset(data, &apd, OffsetType.short)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = false
+        writeInsSourceReg2(data, &apd)
+
+        writeInsAutoFillOffset(data, &apd, OffsetType.short)
+
+        writeInsRelativeJump(data, 0)
+    elif ic == InsCode.jpr:
+        writeInsOpCode(data, OpCode.jxx)
+
+        writeInsCondition(data, CondID.z)
+
+        parseRegOffset(data, &apd, OffsetType.short)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = false
+        writeInsSourceReg2(data, &apd)
+
+        writeInsAutoFillOffset(data, &apd, OffsetType.short)
+
+        writeInsRelativeJump(data, 1)
+    elif ic == InsCode.mov:
+        writeInsOpCode(data, OpCode.add)
+        
+        parseReg(data, &apd)
+        writeInsDestReg(data, apd.register)
+
+        parseRegOffset(data, &apd, OffsetType.normal)
+        writeInsSourceReg1(data, &apd)
+
+        apd.register = RegID.zero
+        apd.hasOffset = false
+        writeInsSourceReg2(data, &apd)
+
+        writeInsAutoFillOffset(data, &apd, OffsetType.normal)
+    else:
+        handleAsmError("(internal): unknown alias instruction!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
 fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     var<u64> lineBegin = data->codeIndex
 
@@ -651,7 +789,9 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     var opCode = opCodeFromInsCode(insCode)
     data->parityInstructions[data->nInstructions].line = data->line
     data->parityInstructions[data->nInstructions].instruction = 0
-    writeInsOpCode(data, opCode)
+    
+    if opCode != OpCode.insAlias:
+        writeInsOpCode(data, opCode)
 
     var insType = insTypeFromOpCode(opCode)
     if insType == InsType.threeArg:
@@ -664,6 +804,8 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
         parseInstructionMemWrite(data, insCode)
     elif insType == InsType.immLoad:
         parseInstructionImmLoad(data, insCode)
+    elif insType == InsType.insAlias:
+        parseInstructionAlias(data, insCode)
     else:
         handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
