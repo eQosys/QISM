@@ -44,7 +44,9 @@ enum InsType:
     condBranch,
     memRead,
     memWrite,
-    immLoad,
+    immLoadFull,
+    immLoadUpper,
+    immLoadLower,
     insAlias
 
 enum RegID:
@@ -230,8 +232,12 @@ fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
         return InsType.memWrite
     if oc == OpCode.ld:
         return InsType.memRead
-    if oc == OpCode.lui || oc == OpCode.lli || oc == OpCode.li || oc == OpCode.int:
-        return InsType.immLoad
+    if oc == OpCode.lui:
+        return InsType.immLoadUpper
+    if oc == OpCode.lli:
+        return InsType.immLoadLower
+    if oc == OpCode.li || oc == OpCode.int:
+        return InsType.immLoadFull
     if oc == OpCode.insAlias:
         return InsType.insAlias
 
@@ -580,8 +586,14 @@ fn<> writeInsSourceReg2(AssemblerData* data, ArgParseData const* apd):
 fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
     writeInsPart(data, rj, 0b1, 31)
 
-fn<> writeInsImmediate(AssemblerData* data, i32 imm):
+fn<> writeInsImmediateFull(AssemblerData* data, i32 imm):
     writeInsPart(data, imm, 0b11111111111111111111111, 9)
+
+fn<> writeInsImmediatePartial(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, 0b1111111111111111, 16)
+
+fn<> writeInsUnused(AssemblerData* data, u32 mask, u32 offset):
+    writeInsPart(data, 0, mask, offset)
 
 fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
@@ -649,13 +661,19 @@ fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
 
     writeInsAutoFillOffset(data, &apd, OffsetType.longSplit)
 
-fn<> parseImmediate(AssemblerData* data, ArgParseData* apd, bool is16BitBound):
+fn<> parseImmediateFull(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
         handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
-    parseLiteral(data, is16BitBound ? LiteralInsertMode.imm16 : LiteralInsertMode.imm23)
+    parseLiteral(data, LiteralInsertMode.imm23)
 
-fn<> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
+fn<> parseImmediatePartial(AssemblerData* data, ArgParseData* apd):
+    if !parseWhitespace(data):
+        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+    parseLiteral(data, LiteralInsertMode.imm16)
+
+fn<> parseInstructionImmLoadFull(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
     apd.register = RegID.none
     apd.hasOffset = false
@@ -664,7 +682,23 @@ fn<> parseInstructionImmLoad(AssemblerData* data, InsCode ic):
     parseReg(data, &apd)
     writeInsDestReg(data, apd.register)
 
-    parseImmediate(data, &apd, ic == InsCode.lui || ic == InsCode.lli)
+    parseImmediateFull(data, &apd)
+
+fn<> parseInstructionImmLoadPartial(AssemblerData* data, InsCode ic):
+    var<ArgParseData> apd
+    apd.register = RegID.none
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+    
+    parseReg(data, &apd)
+    writeInsDestReg(data, apd.register)
+
+    writeInsSourceReg1(data, &apd)
+
+    parseImmediatePartial(data, &apd)
+
+    writeInsUnused(data, 0b11, 14)
+    writeInsUnused(data, 0b1, 9)
 
 fn<> parseInstructionAlias(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
@@ -802,8 +836,10 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
         parseInstructionMemRead(data, insCode)
     elif insType == InsType.memWrite:
         parseInstructionMemWrite(data, insCode)
-    elif insType == InsType.immLoad:
-        parseInstructionImmLoad(data, insCode)
+    elif insType == InsType.immLoadFull:
+        parseInstructionImmLoadFull(data, insCode)
+    elif insType == InsType.immLoadLower || insType == InsType.immLoadUpper:
+        parseInstructionImmLoadPartial(data, insCode)
     elif insType == InsType.insAlias:
         parseInstructionAlias(data, insCode)
     else:
@@ -841,8 +877,8 @@ fn<bool> parseComment(AssemblerData* data) nodiscard:
     return true
 
 fn<> checkLiteralRange(i32 value, LiteralInsertMode lim, AssemblerData* data, u32 line, u32 column):
-    var<u32> minVal = 0
-    var<u32> maxVal = 0
+    var<i32> minVal = 0
+    var<i32> maxVal = 0
 
     if lim == LiteralInsertMode.imm16:
         minVal = -32768 \\ -2 ** 15
@@ -896,9 +932,10 @@ fn<> insertLiterals(AssemblerData* data):
 
         checkLiteralRange(value, litInfo->insertMode, data, data->line, data->column)
 
-        if litInfo->insertMode == LiteralInsertMode.imm16 || \
-            litInfo->insertMode == LiteralInsertMode.imm23:
-            writeInsImmediate(data, value)
+        if litInfo->insertMode == LiteralInsertMode.imm16:
+            writeInsImmediatePartial(data, value)
+        elif litInfo->insertMode == LiteralInsertMode.imm23:
+            writeInsImmediateFull(data, value)
         else:
             writeInsOffset(data, value, offsetTypeFromLitInsMode(litInfo->insertMode))
 
