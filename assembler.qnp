@@ -1031,6 +1031,38 @@ fn<> checkLiteralRange(i32 value, LiteralInsertMode lim, AssemblerData* data, u3
         handleAsmError("literal value '%' out of range (% to %)", data->filename, line, column, data->instructions, value, minVal, maxVal)
         std.exit(1)
 
+fn<i32> extendLiteralValue(AssemblerData* data, i32 val, LiteralInsertMode lim) nodiscard:
+    var<u32> mask
+    var<u32> msb
+    if lim == LiteralInsertMode.imm16:
+        mask = 0b11111111111111110000000000000000
+        msb = 15
+    elif lim == LiteralInsertMode.imm23:
+        mask = 0b11111111100000000000000000000000
+        msb = 22
+    elif lim == LiteralInsertMode.offNormal:
+        mask = 0b11111111111111111100000000000000
+        msb = 13
+    elif lim == LiteralInsertMode.offShort:
+        mask = 0b11111111111111111110000000000000
+        msb = 12
+    elif lim == LiteralInsertMode.offLongContinuous || \
+        lim == LiteralInsertMode.offLongSplit:
+        mask = 0b11111111111111000000000000000000
+        msb = 17
+    else:
+        handleAsmError("(internal): literal insert mode not implemented!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    var allZeroes = (val & mask) == 0
+    var allOnes = (val & mask) == mask
+
+    if allZeroes && ((val >> msb) & 1) == 1:
+        val |= mask
+    
+    return val
+
+
 fn<> insertLiterals(AssemblerData* data):
     var nInstructionsBackup = data->nInstructions
 
@@ -1056,6 +1088,8 @@ fn<> insertLiterals(AssemblerData* data):
         elif litInfo->mode == LiteralMode.Relative:
             value = value - (data->nInstructions * 4)
 
+
+        value = extendLiteralValue(data, value, litInfo->insertMode)
         checkLiteralRange(value, litInfo->insertMode, data, data->line, data->column)
 
         if litInfo->insertMode == LiteralInsertMode.imm16:
