@@ -213,8 +213,8 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.lui: return OpCode.lui
     if ic == InsCode.lli: return OpCode.lli
     if ic == InsCode.li: return OpCode.li
-    if ic == InsCode.int: return OpCode.int
-    if ic == InsCode.not || ic == InsCode.neg || \
+    if ic == InsCode.int || \
+        ic == InsCode.not || ic == InsCode.neg || \
         ic == InsCode.inc || ic == InsCode.dec || \
         ic == InsCode.jmp || ic == InsCode.jpr || \
         ic == InsCode.mov:
@@ -706,7 +706,11 @@ fn<> parseInstructionAlias(AssemblerData* data, InsCode ic):
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
     
-    if ic == InsCode.not:
+    if ic == InsCode.int:
+        writeInsOpCode(data, OpCode.int)
+        parseImmediateFull(data, &apd)
+        writeInsDestReg(data, RegID.zero)
+    elif ic == InsCode.not:
         writeInsOpCode(data, OpCode.xor)
 
         parseReg(data, &apd)
