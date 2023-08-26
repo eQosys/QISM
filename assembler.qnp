@@ -289,6 +289,105 @@ fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
 
     return CondID.none
 
+fn<u8 const*> stringToSevenSegment(u8 c) nodiscard:
+    if c == ' ':  return "00000000"
+    \\if c == '!':  return ""
+    \\if c == '\"': return ""
+    \\if c == '#':  return ""
+    \\if c == '$':  return ""
+    \\if c == '%':  return ""
+    \\if c == '&':  return ""
+    \\if c == '\'': return ""
+    \\if c == '(':  return ""
+    \\if c == ')':  return ""
+    \\if c == '*':  return ""
+    \\if c == '=':  return ""
+    \\if c == ',':  return ""
+    if c == '-':  return "00000001"
+    if c == '.':  return "10000000"
+    if c == '/':  return "00100101"
+    if c == '0':  return "01111110"
+    if c == '1':  return "00110000"
+    if c == '2':  return "01101101"
+    if c == '3':  return "01111001"
+    if c == '4':  return "00110011"
+    if c == '5':  return "01011011"
+    if c == '6':  return "01011111"
+    if c == '7':  return "01110000"
+    if c == '8':  return "01111111"
+    if c == '9':  return "01111011"
+    \\if c == ':':  return ""
+    \\if c == ';':  return ""
+    \\if c == '<':  return ""
+    \\if c == '=':  return ""
+    \\if c == '>':  return ""
+    \\if c == '?':  return ""
+    \\if c == '@':  return ""
+    if c == 'A':  return "01110111"
+    if c == 'B':  return "00011111"
+    if c == 'C':  return "01001110"
+    if c == 'D':  return "00111101"
+    if c == 'E':  return "01001111"
+    if c == 'F':  return "01000111"
+    if c == 'G':  return "01011110"
+    if c == 'H':  return "00110111"
+    if c == 'I':  return "00000110"
+    if c == 'J':  return "00111100"
+    if c == 'K':  return "01010111"
+    if c == 'L':  return "00001110"
+    if c == 'M':  return "01010100"
+    if c == 'N':  return "00010101"
+    if c == 'O':  return "00011101"
+    if c == 'P':  return "01100111"
+    if c == 'Q':  return "01101011"
+    if c == 'R':  return "01100110"
+    if c == 'S':  return "01011011"
+    if c == 'T':  return "00001111"
+    if c == 'U':  return "00111110"
+    if c == 'V':  return "00111110"
+    if c == 'W':  return "01011100"
+    if c == 'X':  return "00110111"
+    if c == 'Y':  return "00111011"
+    if c == 'Z':  return "01101101"
+    \\if c == '[':  return ""
+    if c == '\\': return "00010011"
+    \\if c == ']':  return ""
+    \\if c == '^':  return ""
+    if c == '_':  return "00001000"
+    \\if c == '`':  return ""
+    if c == 'a':  return "01111101"
+    if c == 'b':  return "00011111"
+    if c == 'c':  return "00001101"
+    if c == 'd':  return "00111101"
+    if c == 'e':  return "01101111"
+    if c == 'f':  return "01000111"
+    if c == 'g':  return "01111011"
+    if c == 'h':  return "00010111"
+    if c == 'i':  return "00000100"
+    if c == 'j':  return "00011000"
+    if c == 'k':  return "01010111"
+    if c == 'l':  return "00000110"
+    if c == 'm':  return "00010100"
+    if c == 'n':  return "00010101"
+    if c == 'o':  return "00011101"
+    if c == 'p':  return "01100111"
+    if c == 'q':  return "01110011"
+    if c == 'r':  return "00000101"
+    if c == 's':  return "01011011"
+    if c == 't':  return "00001111"
+    if c == 'u':  return "00011100"
+    if c == 'v':  return "00011100"
+    if c == 'w':  return "01011100"
+    if c == 'x':  return "00110111"
+    if c == 'y':  return "00111011"
+    if c == 'z':  return "01101101"
+    \\if c == '{':  return ""
+    if c == '|':  return "00000110"
+    \\if c == '}':  return ""
+    \\if c == '~':  return ""
+
+    return null
+
 fn<u64> lineCount(std.String const* code) nodiscard:
     var<u64> count = 1
     var<u64> i = 0
@@ -478,6 +577,29 @@ fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
             handleAsmError("expected whitespace after 'rel'!", data->filename, data->line, data->column, data->instructions)
             std.exit(1)
         str = parseAlNum(data, true)
+    elif str->equals("sts"):
+        std.delete(str)
+        litInfo->mode = LiteralMode.Default
+        parseWhitespace(data)
+        if !parseExact(data, "\""):
+            handleAsmError("expected '\"' after 'sts'!", data->filename, data->line, data->column, data->instructions)
+            std.exit(1)
+        var strLit = std.new(std.String)
+        while !parseExact(data, "\""):
+            strLit->push_back(data->code->at(data->codeIndex))
+            if ++data->codeIndex >= data->codeLength:
+                handleAsmError("expected '\"' after string literal!", data->filename, data->line, data->column, data->instructions)
+                std.exit(1)
+
+        str = std.new(std.String, "0b")
+
+        var i = 0
+        while i < strLit->length():
+            var part = stringToSevenSegment(strLit->at(i))
+            if part == null:
+                handleAsmError("unable to convert '%' to seven segment format!", data->filename, data->line, data->column, data->instructions, strLit->at(i))
+            str->append(part)
+            ++i
 
     if str->length() == 0:
         handleAsmError("expected literal!", data->filename, data->line, data->column, data->instructions)
