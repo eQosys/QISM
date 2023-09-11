@@ -1,0 +1,249 @@
+enum InsCode:
+    none,
+    add, sub,
+    and, or, xor,
+    shl, shr,
+    jz, jnz, jgz, jlz, jge, jle,
+    jrz, jrnz, jrgz, jrlz, jrge, jrle,
+    st, ld,
+    lui, lli, li,
+    int,
+    not, neg,
+    inc, dec,
+    jmp, jpr,
+    mov
+
+enum OpCode:
+    none     = 0b111111,
+    insAlias = 0b111110,
+    add  = 0b00000,
+    sub  = 0b00001,
+    and  = 0b00010,
+    or   = 0b00011,
+    xor  = 0b00100,
+    shl  = 0b00101,
+    shr  = 0b00110,
+    jxx  = 0b00111,
+    st   = 0b01000,
+    ld   = 0b01001,
+    lui  = 0b01010,
+    lli  = 0b01011,
+    li   = 0b01100,
+    int  = 0b01101
+
+enum InsType:
+    none,
+    threeArg,
+    condBranch,
+    memRead,
+    memWrite,
+    immLoadFull,
+    immLoadUpper,
+    immLoadLower,
+    insAlias
+
+enum RegID:
+    zero = 0b0000,
+    gp   = 0b0001,
+    sp   = 0b0010,
+    bp   = 0b0011,
+    ra   = 0b0100,
+    r0   = 0b0101,
+    r1   = 0b0110,
+    r2   = 0b0111,
+    r3   = 0b1000,
+    r4   = 0b1001,
+    r5   = 0b1010,
+    r6   = 0b1011,
+    r7   = 0b1100,
+    rinp = 0b1101,
+    rssd = 0b1110,
+    rled = 0b1111,
+    none = 0b11111
+
+enum CondID:
+    z  = 0b0000,
+    nz = 0b0001,
+    gz = 0b0010,
+    lz = 0b0011,
+    ge = 0b0100,
+    le = 0b0101,
+    none = 0b11111
+
+enum OffsetType:
+    none,
+    normal,
+    short,
+    longContinuous,
+    longSplit
+
+enum LiteralMode:
+    Default,
+    Upper,
+    Lower,
+    Relative
+
+enum LiteralInsertMode:
+    none,
+    imm16,
+    imm23,
+    offNormal,
+    offShort,
+    offLongContinuous,
+    offLongSplit
+
+pack LiteralInfo:
+    var<LiteralMode> mode
+    var<LiteralInsertMode> insertMode
+    var<i32> value
+    var<std.String*> label
+    var<u32> insIndex
+    var<u32> line
+    var<u32> column
+
+
+
+fn<LiteralInsertMode> litInsModeFromOffsetType(OffsetType ot) nodiscard:
+    if ot == OffsetType.normal: return LiteralInsertMode.offNormal
+    if ot == OffsetType.short: return LiteralInsertMode.offShort
+    if ot == OffsetType.longContinuous: return LiteralInsertMode.offLongContinuous
+    if ot == OffsetType.longSplit: return LiteralInsertMode.offLongSplit
+    return LiteralInsertMode.none
+
+fn<OffsetType> offsetTypeFromLitInsMode(LiteralInsertMode lim) nodiscard:
+    if lim == LiteralInsertMode.offNormal: return OffsetType.normal
+    if lim == LiteralInsertMode.offShort: return OffsetType.short
+    if lim == LiteralInsertMode.offLongContinuous: return OffsetType.longContinuous
+    if lim == LiteralInsertMode.offLongSplit: return OffsetType.longSplit
+    return OffsetType.none
+
+fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
+    if str->equals("add"): return InsCode.add
+    if str->equals("sub"): return InsCode.sub
+    if str->equals("and"): return InsCode.and
+    if str->equals("or"): return InsCode.or
+    if str->equals("xor"): return InsCode.xor
+    if str->equals("shl"): return InsCode.shl
+    if str->equals("shr"): return InsCode.shr
+    if str->equals("jz"): return InsCode.jz
+    if str->equals("jnz"): return InsCode.jnz
+    if str->equals("jgz"): return InsCode.jgz
+    if str->equals("jlz"): return InsCode.jlz
+    if str->equals("jge"): return InsCode.jge
+    if str->equals("jle"): return InsCode.jle
+    if str->equals("jrz"): return InsCode.jrz
+    if str->equals("jrnz"): return InsCode.jrnz
+    if str->equals("jrgz"): return InsCode.jrgz
+    if str->equals("jrlz"): return InsCode.jrlz
+    if str->equals("jrge"): return InsCode.jrge
+    if str->equals("jrle"): return InsCode.jrle
+    if str->equals("st"): return InsCode.st
+    if str->equals("ld"): return InsCode.ld
+    if str->equals("lui"): return InsCode.lui
+    if str->equals("lli"): return InsCode.lli
+    if str->equals("li"): return InsCode.li
+    if str->equals("int"): return InsCode.int
+    if str->equals("not"): return InsCode.not
+    if str->equals("neg"): return InsCode.neg
+    if str->equals("inc"): return InsCode.inc
+    if str->equals("dec"): return InsCode.dec
+    if str->equals("jmp"): return InsCode.jmp
+    if str->equals("jpr"): return InsCode.jpr
+    if str->equals("mov"): return InsCode.mov
+    return InsCode.none
+
+fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
+    if ic == InsCode.add: return OpCode.add
+    if ic == InsCode.sub: return OpCode.sub
+    if ic == InsCode.and: return OpCode.and
+    if ic == InsCode.or: return OpCode.or
+    if ic == InsCode.xor: return OpCode.xor
+    if ic == InsCode.shl: return OpCode.shl
+    if ic == InsCode.shr: return OpCode.shr
+    if ic == InsCode.jz || ic == InsCode.jnz || \
+        ic == InsCode.jgz || ic == InsCode.jlz || \
+        ic == InsCode.jge || ic == InsCode.jle || \
+        ic == InsCode.jrz || ic == InsCode.jrnz || \
+        ic == InsCode.jrgz || ic == InsCode.jrlz || \
+        ic == InsCode.jrge || ic == InsCode.jrle:
+        return OpCode.jxx
+    if ic == InsCode.st: return OpCode.st
+    if ic == InsCode.ld: return OpCode.ld
+    if ic == InsCode.lui: return OpCode.lui
+    if ic == InsCode.lli: return OpCode.lli
+    if ic == InsCode.li: return OpCode.li
+    if ic == InsCode.int || \
+        ic == InsCode.not || ic == InsCode.neg || \
+        ic == InsCode.inc || ic == InsCode.dec || \
+        ic == InsCode.jmp || ic == InsCode.jpr || \
+        ic == InsCode.mov:
+        return OpCode.insAlias
+    return OpCode.none
+
+fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
+    if oc == OpCode.add || oc == OpCode.sub || \
+        oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor || \
+        oc == OpCode.shl || oc == OpCode.shr:
+        return InsType.threeArg
+    if oc == OpCode.jxx:
+        return InsType.condBranch
+    if oc == OpCode.st:
+        return InsType.memWrite
+    if oc == OpCode.ld:
+        return InsType.memRead
+    if oc == OpCode.lui:
+        return InsType.immLoadUpper
+    if oc == OpCode.lli:
+        return InsType.immLoadLower
+    if oc == OpCode.li || oc == OpCode.int:
+        return InsType.immLoadFull
+    if oc == OpCode.insAlias:
+        return InsType.insAlias
+
+    handleMsgError("(internal): unknown opcode!")
+    return InsType.none
+
+fn<RegID> regIDFromStr(std.String const* str) nodiscard:
+    if str->equals("zero"): return RegID.zero
+    if str->equals("gp"): return RegID.gp
+    if str->equals("sp"): return RegID.sp
+    if str->equals("bp"): return RegID.bp
+    if str->equals("ra"): return RegID.ra
+    if str->equals("r0"): return RegID.r0
+    if str->equals("r1"): return RegID.r1
+    if str->equals("r2"): return RegID.r2
+    if str->equals("r3"): return RegID.r3
+    if str->equals("r4"): return RegID.r4
+    if str->equals("r5"): return RegID.r5
+    if str->equals("r6"): return RegID.r6
+    if str->equals("r7"): return RegID.r7
+    if str->equals("rinp"): return RegID.rinp
+    if str->equals("rssd"): return RegID.rssd
+    if str->equals("rled"): return RegID.rled
+    return RegID.none
+
+fn<bool> isRelativeJump(InsCode ic) nodiscard:
+    return ic == InsCode.jrz || ic == InsCode.jrnz || \
+        ic == InsCode.jrgz || ic == InsCode.jrlz || \
+        ic == InsCode.jrge || ic == InsCode.jrle
+
+fn<bool> isAbsoluteJump(InsCode ic) nodiscard:
+    return ic == InsCode.jz || ic == InsCode.jnz || \
+        ic == InsCode.jgz || ic == InsCode.jlz || \
+        ic == InsCode.jge || ic == InsCode.jle
+
+fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
+    if ic == InsCode.jz || ic == InsCode.jrz:
+        return CondID.z
+    if ic == InsCode.jnz || ic == InsCode.jrnz:
+        return CondID.nz
+    if ic == InsCode.jgz || ic == InsCode.jrgz:
+        return CondID.gz
+    if ic == InsCode.jlz || ic == InsCode.jrlz:
+        return CondID.lz
+    if ic == InsCode.jge || ic == InsCode.jrge:
+        return CondID.ge
+    if ic == InsCode.jle || ic == InsCode.jrle:
+        return CondID.le
+
+    return CondID.none

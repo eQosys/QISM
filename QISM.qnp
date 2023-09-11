@@ -59,6 +59,7 @@ import "stdio.qnp"
 import "system.qnp"
 import "fileio.qnp"
 import "assembler.qnp"
+import "disassembler.qnp"
 import "filewriter.qnp"
 
 \\ Read a file into a string.
@@ -204,9 +205,6 @@ asmData.verbose = verbose
 asmData.addAnnotations = addAnnotations
 
 assemble(&asmData)
-
-if verbose:
-    std.println("info: # of instructions: %", asmData.nInstructions)
 
 if verbose: std.println("Writing output file...")
 if !writeToFile(outputFilename, &asmData, outputFormat):

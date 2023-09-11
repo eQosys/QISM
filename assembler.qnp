@@ -5,108 +5,8 @@ import "list.qnp"
 
 import "errorhandler.qnp"
 
-enum InsCode:
-    none,
-    add, sub,
-    and, or, xor,
-    shl, shr,
-    jz, jnz, jgz, jlz, jge, jle,
-    jrz, jrnz, jrgz, jrlz, jrge, jrle,
-    st, ld,
-    lui, lli, li,
-    int,
-    not, neg,
-    inc, dec,
-    jmp, jpr,
-    mov
-
-enum OpCode:
-    none     = 0b111111,
-    insAlias = 0b111110,
-    add  = 0b00000,
-    sub  = 0b00001,
-    and  = 0b00010,
-    or   = 0b00011,
-    xor  = 0b00100,
-    shl  = 0b00101,
-    shr  = 0b00110,
-    jxx  = 0b00111,
-    st   = 0b01000,
-    ld   = 0b01001,
-    lui  = 0b01010,
-    lli  = 0b01011,
-    li   = 0b01100,
-    int  = 0b01101
-
-enum InsType:
-    none,
-    threeArg,
-    condBranch,
-    memRead,
-    memWrite,
-    immLoadFull,
-    immLoadUpper,
-    immLoadLower,
-    insAlias
-
-enum RegID:
-    zero = 0b0000,
-    gp   = 0b0001,
-    sp   = 0b0010,
-    bp   = 0b0011,
-    ra   = 0b0100,
-    r0   = 0b0101,
-    r1   = 0b0110,
-    r2   = 0b0111,
-    r3   = 0b1000,
-    r4   = 0b1001,
-    r5   = 0b1010,
-    r6   = 0b1011,
-    r7   = 0b1100,
-    rinp = 0b1101,
-    rssd = 0b1110,
-    rled = 0b1111,
-    none = 0b11111
-
-enum CondID:
-    z  = 0b0000,
-    nz = 0b0001,
-    gz = 0b0010,
-    lz = 0b0011,
-    ge = 0b0100,
-    le = 0b0101,
-    none = 0b11111
-
-enum OffsetType:
-    none,
-    normal,
-    short,
-    longContinuous,
-    longSplit
-
-enum LiteralMode:
-    Default,
-    Upper,
-    Lower,
-    Relative
-
-enum LiteralInsertMode:
-    none,
-    imm16,
-    imm23,
-    offNormal,
-    offShort,
-    offLongContinuous,
-    offLongSplit
-
-pack LiteralInfo:
-    var<LiteralMode> mode
-    var<LiteralInsertMode> insertMode
-    var<i32> value
-    var<std.String*> label
-    var<u32> insIndex
-    var<u32> line
-    var<u32> column
+import "instructionHelpers.qnp"
+import "stringToSevenSegment.qnp"
 
 pack ArgParseData:
     var<RegID> register
@@ -134,6 +34,8 @@ pack AssemblerData:
     var<std.Map*> labels
     var<std.List*> literals
 
+
+
 fn<> freeAsmData(AssemblerData* data):
     std.free(data->instructions)
     std.free(data->entrypointName)
@@ -144,250 +46,6 @@ fn<> freeAsmData(AssemblerData* data):
             ++i
         std.free(data->annotations)
 
-fn<LiteralInsertMode> litInsModeFromOffsetType(OffsetType ot) nodiscard:
-    if ot == OffsetType.normal: return LiteralInsertMode.offNormal
-    if ot == OffsetType.short: return LiteralInsertMode.offShort
-    if ot == OffsetType.longContinuous: return LiteralInsertMode.offLongContinuous
-    if ot == OffsetType.longSplit: return LiteralInsertMode.offLongSplit
-    return LiteralInsertMode.none
-
-fn<OffsetType> offsetTypeFromLitInsMode(LiteralInsertMode lim) nodiscard:
-    if lim == LiteralInsertMode.offNormal: return OffsetType.normal
-    if lim == LiteralInsertMode.offShort: return OffsetType.short
-    if lim == LiteralInsertMode.offLongContinuous: return OffsetType.longContinuous
-    if lim == LiteralInsertMode.offLongSplit: return OffsetType.longSplit
-    return OffsetType.none
-
-fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
-    if str->equals("add"): return InsCode.add
-    if str->equals("sub"): return InsCode.sub
-    if str->equals("and"): return InsCode.and
-    if str->equals("or"): return InsCode.or
-    if str->equals("xor"): return InsCode.xor
-    if str->equals("shl"): return InsCode.shl
-    if str->equals("shr"): return InsCode.shr
-    if str->equals("jz"): return InsCode.jz
-    if str->equals("jnz"): return InsCode.jnz
-    if str->equals("jgz"): return InsCode.jgz
-    if str->equals("jlz"): return InsCode.jlz
-    if str->equals("jge"): return InsCode.jge
-    if str->equals("jle"): return InsCode.jle
-    if str->equals("jrz"): return InsCode.jrz
-    if str->equals("jrnz"): return InsCode.jrnz
-    if str->equals("jrgz"): return InsCode.jrgz
-    if str->equals("jrlz"): return InsCode.jrlz
-    if str->equals("jrge"): return InsCode.jrge
-    if str->equals("jrle"): return InsCode.jrle
-    if str->equals("st"): return InsCode.st
-    if str->equals("ld"): return InsCode.ld
-    if str->equals("lui"): return InsCode.lui
-    if str->equals("lli"): return InsCode.lli
-    if str->equals("li"): return InsCode.li
-    if str->equals("int"): return InsCode.int
-    if str->equals("not"): return InsCode.not
-    if str->equals("neg"): return InsCode.neg
-    if str->equals("inc"): return InsCode.inc
-    if str->equals("dec"): return InsCode.dec
-    if str->equals("jmp"): return InsCode.jmp
-    if str->equals("jpr"): return InsCode.jpr
-    if str->equals("mov"): return InsCode.mov
-    return InsCode.none
-
-fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
-    if ic == InsCode.add: return OpCode.add
-    if ic == InsCode.sub: return OpCode.sub
-    if ic == InsCode.and: return OpCode.and
-    if ic == InsCode.or: return OpCode.or
-    if ic == InsCode.xor: return OpCode.xor
-    if ic == InsCode.shl: return OpCode.shl
-    if ic == InsCode.shr: return OpCode.shr
-    if ic == InsCode.jz || ic == InsCode.jnz || \
-        ic == InsCode.jgz || ic == InsCode.jlz || \
-        ic == InsCode.jge || ic == InsCode.jle || \
-        ic == InsCode.jrz || ic == InsCode.jrnz || \
-        ic == InsCode.jrgz || ic == InsCode.jrlz || \
-        ic == InsCode.jrge || ic == InsCode.jrle:
-        return OpCode.jxx
-    if ic == InsCode.st: return OpCode.st
-    if ic == InsCode.ld: return OpCode.ld
-    if ic == InsCode.lui: return OpCode.lui
-    if ic == InsCode.lli: return OpCode.lli
-    if ic == InsCode.li: return OpCode.li
-    if ic == InsCode.int || \
-        ic == InsCode.not || ic == InsCode.neg || \
-        ic == InsCode.inc || ic == InsCode.dec || \
-        ic == InsCode.jmp || ic == InsCode.jpr || \
-        ic == InsCode.mov:
-        return OpCode.insAlias
-    return OpCode.none
-
-fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
-    if oc == OpCode.add || oc == OpCode.sub || \
-        oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor || \
-        oc == OpCode.shl || oc == OpCode.shr:
-        return InsType.threeArg
-    if oc == OpCode.jxx:
-        return InsType.condBranch
-    if oc == OpCode.st:
-        return InsType.memWrite
-    if oc == OpCode.ld:
-        return InsType.memRead
-    if oc == OpCode.lui:
-        return InsType.immLoadUpper
-    if oc == OpCode.lli:
-        return InsType.immLoadLower
-    if oc == OpCode.li || oc == OpCode.int:
-        return InsType.immLoadFull
-    if oc == OpCode.insAlias:
-        return InsType.insAlias
-
-    handleMsgError("(internal): unknown opcode!")
-    return InsType.none
-
-fn<RegID> regIDFromStr(std.String const* str) nodiscard:
-    if str->equals("zero"): return RegID.zero
-    if str->equals("gp"): return RegID.gp
-    if str->equals("sp"): return RegID.sp
-    if str->equals("bp"): return RegID.bp
-    if str->equals("ra"): return RegID.ra
-    if str->equals("r0"): return RegID.r0
-    if str->equals("r1"): return RegID.r1
-    if str->equals("r2"): return RegID.r2
-    if str->equals("r3"): return RegID.r3
-    if str->equals("r4"): return RegID.r4
-    if str->equals("r5"): return RegID.r5
-    if str->equals("r6"): return RegID.r6
-    if str->equals("r7"): return RegID.r7
-    if str->equals("rinp"): return RegID.rinp
-    if str->equals("rssd"): return RegID.rssd
-    if str->equals("rled"): return RegID.rled
-    return RegID.none
-
-fn<bool> isRelativeJump(InsCode ic) nodiscard:
-    return ic == InsCode.jrz || ic == InsCode.jrnz || \
-        ic == InsCode.jrgz || ic == InsCode.jrlz || \
-        ic == InsCode.jrge || ic == InsCode.jrle
-
-fn<bool> isAbsoluteJump(InsCode ic) nodiscard:
-    return ic == InsCode.jz || ic == InsCode.jnz || \
-        ic == InsCode.jgz || ic == InsCode.jlz || \
-        ic == InsCode.jge || ic == InsCode.jle
-
-fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
-    if ic == InsCode.jz || ic == InsCode.jrz:
-        return CondID.z
-    if ic == InsCode.jnz || ic == InsCode.jrnz:
-        return CondID.nz
-    if ic == InsCode.jgz || ic == InsCode.jrgz:
-        return CondID.gz
-    if ic == InsCode.jlz || ic == InsCode.jrlz:
-        return CondID.lz
-    if ic == InsCode.jge || ic == InsCode.jrge:
-        return CondID.ge
-    if ic == InsCode.jle || ic == InsCode.jrle:
-        return CondID.le
-
-    return CondID.none
-
-fn<u8 const*> stringToSevenSegment(u8 c) nodiscard:
-    if c == ' ':  return "00000000"
-    \\if c == '!':  return ""
-    \\if c == '\"': return ""
-    \\if c == '#':  return ""
-    \\if c == '$':  return ""
-    \\if c == '%':  return ""
-    \\if c == '&':  return ""
-    \\if c == '\'': return ""
-    \\if c == '(':  return ""
-    \\if c == ')':  return ""
-    \\if c == '*':  return ""
-    \\if c == '=':  return ""
-    \\if c == ',':  return ""
-    if c == '-':  return "00000001"
-    if c == '.':  return "10000000"
-    if c == '/':  return "00100101"
-    if c == '0':  return "01111110"
-    if c == '1':  return "00110000"
-    if c == '2':  return "01101101"
-    if c == '3':  return "01111001"
-    if c == '4':  return "00110011"
-    if c == '5':  return "01011011"
-    if c == '6':  return "01011111"
-    if c == '7':  return "01110000"
-    if c == '8':  return "01111111"
-    if c == '9':  return "01111011"
-    \\if c == ':':  return ""
-    \\if c == ';':  return ""
-    \\if c == '<':  return ""
-    \\if c == '=':  return ""
-    \\if c == '>':  return ""
-    \\if c == '?':  return ""
-    \\if c == '@':  return ""
-    if c == 'A':  return "01110111"
-    if c == 'B':  return "00011111"
-    if c == 'C':  return "01001110"
-    if c == 'D':  return "00111101"
-    if c == 'E':  return "01001111"
-    if c == 'F':  return "01000111"
-    if c == 'G':  return "01011110"
-    if c == 'H':  return "00110111"
-    if c == 'I':  return "00000110"
-    if c == 'J':  return "00111100"
-    if c == 'K':  return "01010111"
-    if c == 'L':  return "00001110"
-    if c == 'M':  return "01010100"
-    if c == 'N':  return "00010101"
-    if c == 'O':  return "00011101"
-    if c == 'P':  return "01100111"
-    if c == 'Q':  return "01101011"
-    if c == 'R':  return "01100110"
-    if c == 'S':  return "01011011"
-    if c == 'T':  return "00001111"
-    if c == 'U':  return "00111110"
-    if c == 'V':  return "00111110"
-    if c == 'W':  return "01011100"
-    if c == 'X':  return "00110111"
-    if c == 'Y':  return "00111011"
-    if c == 'Z':  return "01101101"
-    \\if c == '[':  return ""
-    if c == '\\': return "00010011"
-    \\if c == ']':  return ""
-    \\if c == '^':  return ""
-    if c == '_':  return "00001000"
-    \\if c == '`':  return ""
-    if c == 'a':  return "01111101"
-    if c == 'b':  return "00011111"
-    if c == 'c':  return "00001101"
-    if c == 'd':  return "00111101"
-    if c == 'e':  return "01101111"
-    if c == 'f':  return "01000111"
-    if c == 'g':  return "01111011"
-    if c == 'h':  return "00010111"
-    if c == 'i':  return "00000100"
-    if c == 'j':  return "00011000"
-    if c == 'k':  return "01010111"
-    if c == 'l':  return "00000110"
-    if c == 'm':  return "00010100"
-    if c == 'n':  return "00010101"
-    if c == 'o':  return "00011101"
-    if c == 'p':  return "01100111"
-    if c == 'q':  return "01110011"
-    if c == 'r':  return "00000101"
-    if c == 's':  return "01011011"
-    if c == 't':  return "00001111"
-    if c == 'u':  return "00011100"
-    if c == 'v':  return "00011100"
-    if c == 'w':  return "01011100"
-    if c == 'x':  return "00110111"
-    if c == 'y':  return "00111011"
-    if c == 'z':  return "01101101"
-    \\if c == '{':  return ""
-    if c == '|':  return "00000110"
-    \\if c == '}':  return ""
-    \\if c == '~':  return ""
-
-    return null
-
 fn<u64> lineCount(std.String const* code) nodiscard:
     var<u64> count = 1
     var<u64> i = 0
@@ -397,6 +55,80 @@ fn<u64> lineCount(std.String const* code) nodiscard:
             ++count
         ++i
     return count
+
+fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
+    var<u32> overlap = data->parityInstructions[data->nInstructions].instruction & (mask << offset)
+    if overlap != 0:
+        handleAsmError("(internal): instruction bit overlap! (overlap: %b+8f0 %b+8f0 %b+8f0 %b+8f0)", data->filename, data->line, data->column, data->instructions, (overlap >> 24) & 0xFF, (overlap >> 16) & 0xFF, (overlap >> 8) & 0xFF, overlap & 0xFF)
+        std.exit(1)
+
+    var rawPart = (u32)part
+    var writablePart = (rawPart & mask) << offset
+    
+    var instr = data->instructions[data->nInstructions]
+    instr &= ~(mask << offset)
+    instr |= writablePart
+    data->instructions[data->nInstructions] = instr
+    data->parityInstructions[data->nInstructions].instruction |= mask << offset
+
+fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
+    writeInsPart(data, oc, 0b11111, 0)
+
+fn<> writeInsDestReg(AssemblerData* data, RegID rid):
+    writeInsPart(data, rid, 0b1111, 5)
+
+fn<> writeInsCondition(AssemblerData* data, CondID cid):
+    if cid == CondID.none:
+        handleAsmError("unknown condition!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    writeInsPart(data, cid, 0b1111, 5)
+
+fn<> writeInsOffsetSelect(AssemblerData* data, i32 os):
+    writeInsPart(data, os, 0b1, 9)
+
+fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):    
+    if ot == OffsetType.normal:
+        writeInsPart(data, offset, 0b11111111111111, 18)
+    elif ot == OffsetType.short:
+        writeInsPart(data, offset, 0b1111111111111, 18)
+    elif ot == OffsetType.longContinuous:
+        writeInsPart(data, offset, 0b111111111111111111, 14)
+    elif ot == OffsetType.longSplit:
+        writeInsPart(data, offset, 0b1111, 5)
+        writeInsPart(data, offset >> 4, 0b11111111111111, 18)
+    else:
+        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
+        std.exit(1)
+
+fn<> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd, OffsetType ot):
+    if apd->offsetAlreadyUsed:
+        return
+    
+    writeInsOffsetSelect(data, 0)
+    writeInsOffset(data, 0, ot)
+
+fn<> writeInsSourceReg1(AssemblerData* data, ArgParseData const* apd):
+    writeInsPart(data, apd->register, 0b1111, 10)
+    if apd->hasOffset:
+        writeInsOffsetSelect(data, 0b0)
+
+fn<> writeInsSourceReg2(AssemblerData* data, ArgParseData const* apd):
+    writeInsPart(data, apd->register, 0b1111, 14)
+    if apd->hasOffset:
+        writeInsOffsetSelect(data, 0b1)
+
+fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
+    writeInsPart(data, rj, 0b1, 31)
+
+fn<> writeInsImmediateFull(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, 0b11111111111111111111111, 9)
+
+fn<> writeInsImmediatePartial(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, 0b1111111111111111, 16)
+
+fn<> writeInsUnused(AssemblerData* data, u32 mask, u32 offset):
+    writeInsPart(data, 0, mask, offset)
 
 fn<bool> parseWhitespace(AssemblerData* data):
     var<bool> parsedWhitespace = false
@@ -473,7 +205,7 @@ fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
     data->entrypointName = name
 
     if data->verbose:
-        std.println("info: entrypoint set to '%'", name->raw())
+        std.println("  info: entrypoint set to '%'", name->raw())
     
     return true
 
@@ -505,7 +237,7 @@ fn<bool> parseLabel(AssemblerData* data) nodiscard:
     data->labels->insert(name, (void*)address)
 
     if data->verbose:
-        std.println("info: label '%' has address 0x%x", name->raw(), address)
+        std.println("  info: label '%' has address 0x%x", name->raw(), address)
 
     return true
 
@@ -642,80 +374,6 @@ fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd, OffsetType ot):
     if !parseExact(data, ")"):
         handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
-
-fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
-    var<u32> overlap = data->parityInstructions[data->nInstructions].instruction & (mask << offset)
-    if overlap != 0:
-        handleAsmError("(internal): instruction bit overlap! (overlap: %b+8f0 %b+8f0 %b+8f0 %b+8f0)", data->filename, data->line, data->column, data->instructions, (overlap >> 24) & 0xFF, (overlap >> 16) & 0xFF, (overlap >> 8) & 0xFF, overlap & 0xFF)
-        std.exit(1)
-
-    var rawPart = (u32)part
-    var writablePart = (rawPart & mask) << offset
-    
-    var instr = data->instructions[data->nInstructions]
-    instr &= ~(mask << offset)
-    instr |= writablePart
-    data->instructions[data->nInstructions] = instr
-    data->parityInstructions[data->nInstructions].instruction |= mask << offset
-
-fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
-    writeInsPart(data, oc, 0b11111, 0)
-
-fn<> writeInsDestReg(AssemblerData* data, RegID rid):
-    writeInsPart(data, rid, 0b1111, 5)
-
-fn<> writeInsCondition(AssemblerData* data, CondID cid):
-    if cid == CondID.none:
-        handleAsmError("unknown condition!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    writeInsPart(data, cid, 0b1111, 5)
-
-fn<> writeInsOffsetSelect(AssemblerData* data, i32 os):
-    writeInsPart(data, os, 0b1, 9)
-
-fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):    
-    if ot == OffsetType.normal:
-        writeInsPart(data, offset, 0b11111111111111, 18)
-    elif ot == OffsetType.short:
-        writeInsPart(data, offset, 0b1111111111111, 18)
-    elif ot == OffsetType.longContinuous:
-        writeInsPart(data, offset, 0b111111111111111111, 14)
-    elif ot == OffsetType.longSplit:
-        writeInsPart(data, offset, 0b1111, 5)
-        writeInsPart(data, offset >> 4, 0b11111111111111, 18)
-    else:
-        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
-        std.exit(1)
-
-fn<> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd, OffsetType ot):
-    if apd->offsetAlreadyUsed:
-        return
-    
-    writeInsOffsetSelect(data, 0)
-    writeInsOffset(data, 0, ot)
-
-fn<> writeInsSourceReg1(AssemblerData* data, ArgParseData const* apd):
-    writeInsPart(data, apd->register, 0b1111, 10)
-    if apd->hasOffset:
-        writeInsOffsetSelect(data, 0b0)
-
-fn<> writeInsSourceReg2(AssemblerData* data, ArgParseData const* apd):
-    writeInsPart(data, apd->register, 0b1111, 14)
-    if apd->hasOffset:
-        writeInsOffsetSelect(data, 0b1)
-
-fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
-    writeInsPart(data, rj, 0b1, 31)
-
-fn<> writeInsImmediateFull(AssemblerData* data, i32 imm):
-    writeInsPart(data, imm, 0b11111111111111111111111, 9)
-
-fn<> writeInsImmediatePartial(AssemblerData* data, i32 imm):
-    writeInsPart(data, imm, 0b1111111111111111, 16)
-
-fn<> writeInsUnused(AssemblerData* data, u32 mask, u32 offset):
-    writeInsPart(data, 0, mask, offset)
 
 fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
@@ -1136,14 +794,14 @@ fn<> assemble(AssemblerData* data):
 
     var lc = lineCount(data->code)
     var instrBuffSize = lc * 4
-    if data->verbose: std.println("info: allocating % bytes of instruction memory...", instrBuffSize)
+    if data->verbose: std.println("  info: allocating % bytes of instruction memory...", instrBuffSize)
     data->instructions = (u32*)std.malloc(instrBuffSize)
     if data->instructions == null:
         handleMsgError("failed to allocate instruction memory")
         std.exit(1)
 
     var parityBuffSize = lc * sizeof(ParityInstruction)
-    if data->verbose: std.println("info: allocating % bytes of parity instruction memory...", parityBuffSize)
+    if data->verbose: std.println("  info: allocating % bytes of parity instruction memory...", parityBuffSize)
     data->parityInstructions = (ParityInstruction*)std.malloc(parityBuffSize)
     if data->parityInstructions == null:
         handleMsgError("failed to allocate parity instruction memory")
@@ -1151,7 +809,7 @@ fn<> assemble(AssemblerData* data):
 
     if data->addAnnotations:
         var annotBuffSize = lc * sizeof(std.String*)
-        if data->verbose: std.println("info: allocating % bytes of annotation memory...", annotBuffSize)
+        if data->verbose: std.println("  info: allocating % bytes of annotation memory...", annotBuffSize)
         data->annotations = (std.String**)std.malloc(annotBuffSize)
         if data->annotations == null:
             handleMsgError("failed to allocate instruction line memory")
@@ -1173,8 +831,10 @@ fn<> assemble(AssemblerData* data):
         handleMsgError("no entrypoint specified!")
         std.exit(1)
 
-    if data->verbose: std.println("info: inserting literals...")
+    if data->verbose: std.println("  info: # of instructions: %", data->nInstructions)
+
+    if data->verbose: std.println("  info: inserting literals...")
     insertLiterals(data)
 
-    if data->verbose: std.println("info: checking parity...")
+    if data->verbose: std.println("  info: checking parity...")
     checkParity(data)

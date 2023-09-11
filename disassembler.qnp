@@ -1,0 +1,98 @@
+import "string.qnp"
+
+import "errorhandler.qnp"
+import "instructionHelpers.qnp"
+
+fn<u32> readInsPart(u32 instruction, u32 mask, u32 offset):
+    return (instruction >> offset) & mask
+
+fn<OpCode> readInsOpCode(u32 instruction):
+    return (OpCode)readInsPart(instruction, 0b11111, 0)
+
+fn<RegID> readInsDestReg(u32 instruction):
+    return (RegID)readInsPart(instruction, 0b1111, 5)
+
+fn<CondID> readInsCondition(u32 instruction):
+    return (CondID)readInsPart(instruction, 0b1111, 5)
+
+fn<bool> readInsOffsetSelect(u32 instruction):
+    return readInsPart(instruction, 0b1, 9)
+
+fn<i32> readInsOffset(u32 instruction, OffsetType ot):
+    var<i32> offset = 0
+    var<u32> extendMask = 0
+    var<u32> msb = 0
+
+    if ot == OffsetType.normal:
+        offset = readInsPart(instruction, 0b11111111111111, 18)
+        extendMask = 0b11111111111111111100000000000000
+        msb = 13
+    elif ot == OffsetType.short:
+        offset = readInsPart(instruction, 0b1111111111111, 18)
+        extendMask = 0b11111111111111111110000000000000
+        msb = 12
+    elif ot == OffsetType.longContinuous:
+        offset = readInsPart(instruction, 0b111111111111111111, 14)
+        extendMask = 0b11111111111111000000000000000000
+        msb = 17
+    elif ot == OffsetType.longSplit:
+        offset = readInsPart(instruction, 0b1111, 5)
+        offset |= readInsPart(instruction, 0b11111111111111, 18) << 4
+        extendMask = 0b11111111111111000000000000000000
+        msb = 17
+    else:
+        handleMsgError("Unknown OffsetType passed to function 'readInsOffset'!")
+        std.exit(1)
+
+    var msbIsSet = (offset >> msb) & 1 == 1
+
+    if msbIsSet:
+        offset |= extendMask
+
+    return offset
+
+fn<RegID> readInsSourceReg1(u32 instruction):
+    return (RegID)readInsPart(instruction, 0b1111, 10)
+
+fn<RegID> readInsSourceReg2(u32 instruction):
+    return (RegID)readInsPart(instruction, 0b1111, 14)
+
+fn<bool> readInsRelativeJump(u32 instruction):
+    return readInsPart(instruction, 0b1, 31)
+
+fn<i32> readInsImmediateFull(u32 instruction):
+    var imm = (i32)readInsPart(instruction, 0b11111111111111111111111, 9)
+    var extendMask = 0b11111111100000000000000000000000
+    var msb = 22
+    var msbIsSet = (imm >> msb) & 1 == 1
+
+    if msbIsSet:
+        imm |= extendMask
+
+    return imm
+
+fn<i32> readInsImmediatePartial(u32 instruction):
+    var imm = (i32)readInsPart(instruction, 0b1111111111111111, 16)
+    var extendMask = 0b11111111111111110000000000000000
+    var msb = 15
+    var msbIsSet = (imm >> msb) & 1 == 1
+
+    if msbIsSet:
+        imm |= extendMask
+
+    return imm
+
+
+fn<std.String*> disasmInstruction(u32 instruction):
+    var txt = std.new(std.String)
+
+    if !txt:
+        handleMsgError("Error allocating memory for instruction string!")
+        std.exit(1)
+
+
+
+    return txt
+
+fn<> disassembleCode():
+    pass

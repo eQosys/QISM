@@ -40,3 +40,4 @@ lui r0 0b1011111111111101
 lli r0 0b1011111111111101
 
 lui r0 sts "bo"
+lui r0 sts "ot"
