@@ -152,6 +152,41 @@ fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("mov"): return InsCode.mov
     return InsCode.none
 
+fn<u8 const*> insCodeToStr(InsCode ic) nodiscard:
+    if ic == InsCode.add: return "add"
+    if ic == InsCode.sub: return "sub"
+    if ic == InsCode.and: return "and"
+    if ic == InsCode.or: return "or"
+    if ic == InsCode.xor: return "xor"
+    if ic == InsCode.shl: return "shl"
+    if ic == InsCode.shr: return "shr"
+    if ic == InsCode.jz: return "jz"
+    if ic == InsCode.jnz: return "jnz"
+    if ic == InsCode.jgz: return "jgz"
+    if ic == InsCode.jlz: return "jlz"
+    if ic == InsCode.jge: return "jge"
+    if ic == InsCode.jle: return "jle"
+    if ic == InsCode.jrz: return "jrz"
+    if ic == InsCode.jrnz: return "jrnz"
+    if ic == InsCode.jrgz: return "jrgz"
+    if ic == InsCode.jrlz: return "jrlz"
+    if ic == InsCode.jrge: return "jrge"
+    if ic == InsCode.jrle: return "jrle"
+    if ic == InsCode.st: return "st"
+    if ic == InsCode.ld: return "ld"
+    if ic == InsCode.lui: return "lui"
+    if ic == InsCode.lli: return "lli"
+    if ic == InsCode.li: return "li"
+    if ic == InsCode.int: return "int"
+    if ic == InsCode.not: return "not"
+    if ic == InsCode.neg: return "neg"
+    if ic == InsCode.inc: return "inc"
+    if ic == InsCode.dec: return "dec"
+    if ic == InsCode.jmp: return "jmp"
+    if ic == InsCode.jpr: return "jpr"
+    if ic == InsCode.mov: return "mov"
+    return "none"
+
 fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.add: return OpCode.add
     if ic == InsCode.sub: return OpCode.sub
@@ -179,6 +214,30 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
         ic == InsCode.mov:
         return OpCode.insAlias
     return OpCode.none
+
+fn<InsCode> insCodeFromOpCodeAndCond(OpCode oc, CondID cid) nodiscard:
+    if oc == OpCode.add: return InsCode.add
+    if oc == OpCode.sub: return InsCode.sub
+    if oc == OpCode.and: return InsCode.and
+    if oc == OpCode.or: return InsCode.or
+    if oc == OpCode.xor: return InsCode.xor
+    if oc == OpCode.shl: return InsCode.shl
+    if oc == OpCode.shr: return InsCode.shr
+    if oc == OpCode.jxx:
+        if cid == CondID.z: return InsCode.jz
+        if cid == CondID.nz: return InsCode.jnz
+        if cid == CondID.gz: return InsCode.jgz
+        if cid == CondID.lz: return InsCode.jlz
+        if cid == CondID.ge: return InsCode.jge
+        if cid == CondID.le: return InsCode.jle
+        return InsCode.none
+    if oc == OpCode.st: return InsCode.st
+    if oc == OpCode.ld: return InsCode.ld
+    if oc == OpCode.lui: return InsCode.lui
+    if oc == OpCode.lli: return InsCode.lli
+    if oc == OpCode.li: return InsCode.li
+    if oc == OpCode.int: return InsCode.int
+    return InsCode.none
 
 fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
     if oc == OpCode.add || oc == OpCode.sub || \
@@ -221,6 +280,25 @@ fn<RegID> regIDFromStr(std.String const* str) nodiscard:
     if str->equals("rssd"): return RegID.rssd
     if str->equals("rled"): return RegID.rled
     return RegID.none
+
+fn<u8 const*> regIDToStr(RegID rid) nodiscard:
+    if rid == RegID.zero: return "zero"
+    if rid == RegID.gp: return "gp"
+    if rid == RegID.sp: return "sp"
+    if rid == RegID.bp: return "bp"
+    if rid == RegID.ra: return "ra"
+    if rid == RegID.r0: return "r0"
+    if rid == RegID.r1: return "r1"
+    if rid == RegID.r2: return "r2"
+    if rid == RegID.r3: return "r3"
+    if rid == RegID.r4: return "r4"
+    if rid == RegID.r5: return "r5"
+    if rid == RegID.r6: return "r6"
+    if rid == RegID.r7: return "r7"
+    if rid == RegID.rinp: return "rinp"
+    if rid == RegID.rssd: return "rssd"
+    if rid == RegID.rled: return "rled"
+    return "none"
 
 fn<bool> isRelativeJump(InsCode ic) nodiscard:
     return ic == InsCode.jrz || ic == InsCode.jrnz || \

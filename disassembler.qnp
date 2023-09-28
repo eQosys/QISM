@@ -82,6 +82,15 @@ fn<i32> readInsImmediatePartial(u32 instruction):
 
     return imm
 
+fn<> disasmInsThreeArg(u32 instruction, std.String* txt):
+    var opCode = readInsOpCode(instruction)
+    var destReg = readInsDestReg(instruction)
+    var srcReg1 = readInsSourceReg1(instruction)
+    var srcReg2 = readInsSourceReg2(instruction)
+
+    var insCode = insCodeFromOpCodeAndCond(opCode, CondID.none)
+
+    txt->append(insCodeToStr(insCode))
 
 fn<std.String*> disasmInstruction(u32 instruction):
     var txt = std.new(std.String)
@@ -90,7 +99,25 @@ fn<std.String*> disasmInstruction(u32 instruction):
         handleMsgError("Error allocating memory for instruction string!")
         std.exit(1)
 
+    var insType = insTypeFromOpCode(readInsOpCode(instruction))
 
+    if insType == InsType.threeArg:
+        disasmInsThreeArg(instruction, txt)
+    elif insType == InsType.condBranch:
+        pass
+    elif insType == InsType.memWrite:
+        pass
+    elif insType == InsType.memRead:
+        pass
+    elif insType == InsType.immLoadUpper:
+        pass
+    elif insType == InsType.immLoadLower:
+        pass
+    elif insType == InsType.immLoadFull:
+        pass
+    else:
+        handleMsgError("Unknown instruction type!")
+        std.exit(1)
 
     return txt
 
