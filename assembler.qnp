@@ -2,6 +2,7 @@ import "string.qnp"
 import "stdio.qnp"
 import "map.qnp"
 import "list.qnp"
+import "math.qnp"
 
 import "errorhandler.qnp"
 
@@ -9,6 +10,7 @@ import "instructionHelpers.qnp"
 import "stringToSevenSegment.qnp"
 
 pack ArgParseData:
+    var<OffsetType> offsetType
     var<RegID> register
     var<bool> hasOffset
     var<bool> offsetAlreadyUsed
@@ -56,8 +58,20 @@ fn<u64> lineCount(std.String const* code) nodiscard:
         ++i
     return count
 
-fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
+fn<u32> widthToMask(AssemblerData* data, u32 width) nodiscard:
+    if width == 0 || width > 32:
+        handleAsmError("(internal): invalid width!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    var<u32> mask = 0
+    while width-- != 0:
+        mask = (mask << 1) | 1
+    return mask
+
+fn<> writeInsPart(AssemblerData* data, ?T part, u32 offset, u32 width):
+    var<u32> mask = widthToMask(data, width)
     var<u32> overlap = data->parityInstructions[data->nInstructions].instruction & (mask << offset)
+
     if overlap != 0:
         handleAsmError("(internal): instruction bit overlap! (overlap: %b+8f0 %b+8f0 %b+8f0 %b+8f0)", data->filename, data->line, data->column, data->instructions, (overlap >> 24) & 0xFF, (overlap >> 16) & 0xFF, (overlap >> 8) & 0xFF, overlap & 0xFF)
         std.exit(1)
@@ -72,63 +86,65 @@ fn<> writeInsPart(AssemblerData* data, ?T part, u32 mask, u32 offset):
     data->parityInstructions[data->nInstructions].instruction |= mask << offset
 
 fn<> writeInsOpCode(AssemblerData* data, OpCode oc):
-    writeInsPart(data, oc, 0b11111, 0)
+    writeInsPart(data, oc, INS_OPCODE_OFFSET, INS_OPCODE_WIDTH)
 
-fn<> writeInsDestReg(AssemblerData* data, RegID rid):
-    writeInsPart(data, rid, 0b1111, 5)
+fn<> writeInsRegDest(AssemblerData* data, RegID rid):
+    writeInsPart(data, rid, INS_REG_DEST_OFFSET, INS_REG_DEST_WIDTH)
 
-fn<> writeInsCondition(AssemblerData* data, CondID cid):
+fn<> writeInsJmpCondition(AssemblerData* data, CondID cid):
     if cid == CondID.none:
         handleAsmError("unknown condition!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-    writeInsPart(data, cid, 0b1111, 5)
+    writeInsPart(data, cid, INS_JMP_COND_OFFSET, INS_JMP_COND_WIDTH)
+
+fn<> writeInsOpSize(AssemblerData* data, OpSize ops):
+    if ops == OpSize.none:
+        handleAsmError("unknown operand size!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    writeInsPart(data, ops, INS_OP_SIZE_OFFSET, INS_OP_SIZE_WIDTH)
 
 fn<> writeInsOffsetSelect(AssemblerData* data, i32 os):
-    writeInsPart(data, os, 0b1, 9)
+    writeInsPart(data, os, INS_OFF_SEL_OFFSET, INS_OFF_SEL_WIDTH)
 
-fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):    
-    if ot == OffsetType.normal:
-        writeInsPart(data, offset, 0b11111111111111, 18)
-    elif ot == OffsetType.short:
-        writeInsPart(data, offset, 0b1111111111111, 18)
+fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
+    if ot == OffsetType.short:
+        writeInsPart(data, offset, INS_OFF_SHORT_OFFSET, INS_OFF_SHORT_WIDTH)
     elif ot == OffsetType.longContinuous:
-        writeInsPart(data, offset, 0b111111111111111111, 14)
+        writeInsPart(data, offset, INS_OFF_LONG_CONT_OFFSET, INS_OFF_LONG_CONT_WIDTH)
     elif ot == OffsetType.longSplit:
-        writeInsPart(data, offset, 0b1111, 5)
-        writeInsPart(data, offset >> 4, 0b11111111111111, 18)
+        writeInsPart(data, offset, INS_OFF_LONG_SPLIT_LWR_OFFSET, INS_OFF_LONG_SPLIT_LWR_WIDTH)
+        writeInsPart(data, offset >> 4, INS_OFF_LONG_SPLIT_UPR_OFFSET, INS_OFF_LONG_SPLIT_UPR_WIDTH)
     else:
         handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
         std.exit(1)
 
-fn<> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd, OffsetType ot):
+fn<> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd):
     if apd->offsetAlreadyUsed:
         return
-    
-    writeInsOffsetSelect(data, 0)
-    writeInsOffset(data, 0, ot)
 
-fn<> writeInsSourceReg1(AssemblerData* data, ArgParseData const* apd):
-    writeInsPart(data, apd->register, 0b1111, 10)
+    writeInsOffsetSelect(data, 0)
+    writeInsOffset(data, 0, apd->offsetType)
+
+fn<> writeInsRegSrc1(AssemblerData* data, ArgParseData const* apd):
+    writeInsPart(data, apd->register, INS_REG_SRC1_OFFSET, INS_REG_SRC1_WIDTH)
     if apd->hasOffset:
         writeInsOffsetSelect(data, 0b0)
 
-fn<> writeInsSourceReg2(AssemblerData* data, ArgParseData const* apd):
-    writeInsPart(data, apd->register, 0b1111, 14)
+fn<> writeInsRegSrc2(AssemblerData* data, ArgParseData const* apd):
+    writeInsPart(data, apd->register, INS_REG_SRC2_OFFSET, INS_REG_SRC2_WIDTH)
     if apd->hasOffset:
         writeInsOffsetSelect(data, 0b1)
 
-fn<> writeInsRelativeJump(AssemblerData* data, i32 rj):
-    writeInsPart(data, rj, 0b1, 31)
+fn<> writeInsImmLong(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, INS_IMM_LONG_OFFSET, INS_IMM_LONG_WIDTH)
 
-fn<> writeInsImmediateFull(AssemblerData* data, i32 imm):
-    writeInsPart(data, imm, 0b11111111111111111111111, 9)
+fn<> writeInsImmShort(AssemblerData* data, i32 imm):
+    writeInsPart(data, imm, INS_IMM_SHORT_OFFSET, INS_IMM_SHORT_WIDTH)
 
-fn<> writeInsImmediatePartial(AssemblerData* data, i32 imm):
-    writeInsPart(data, imm, 0b1111111111111111, 16)
-
-fn<> writeInsUnused(AssemblerData* data, u32 mask, u32 offset):
-    writeInsPart(data, 0, mask, offset)
+fn<> writeInsUnused(AssemblerData* data, u32 offset, u32 width):
+    writeInsPart(data, 0, offset, width)
 
 fn<bool> parseWhitespace(AssemblerData* data):
     var<bool> parsedWhitespace = false
@@ -257,6 +273,24 @@ fn<InsCode> parseInsCode(AssemblerData* data) nodiscard:
 
     return insCode
 
+fn<OpSize> parseOpSize(AssemblerData* data) nodiscard:
+    if !parseExact(data, "."):
+        return OpSize.none
+
+    if parseExact(data, "b"):
+        return OpSize.byte
+    elif parseExact(data, "h"):
+        return OpSize.half
+    elif parseExact(data, "w"):
+        return OpSize.word
+    elif parseExact(data, "d"):
+        return OpSize.dword
+    else:
+        handleAsmError("expected 'b', 'h', 'w' or 'd' after '.'!", data->filename, data->line, data->column, data->instructions)
+        std.exit(1)
+
+    return OpSize.none
+
 fn<> parseReg(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
         handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column, data->instructions)
@@ -356,7 +390,7 @@ fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
 
     data->literals->push_back(litInfo)
 
-fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd, OffsetType ot):
+fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd):
     parseReg(data, apd)
 
     if !parseExact(data, "("):
@@ -369,89 +403,96 @@ fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd, OffsetType ot):
 
     apd->offsetAlreadyUsed = true
     apd->hasOffset = true
-    parseLiteral(data, litInsModeFromOffsetType(ot))
+    parseLiteral(data, litInsModeFromOffsetType(apd->offsetType))
 
     if !parseExact(data, ")"):
         handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
 
-fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic):
+fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic, OpSize ops):
     var<ArgParseData> apd
+    apd.offsetType = OffsetType.short
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
+
+    writeInsOpSize(data, ops)
 
     parseReg(data, &apd)
-    writeInsDestReg(data, apd.register)
+    writeInsRegDest(data, apd.register)
     
-    parseRegOffset(data, &apd, OffsetType.normal)
-    writeInsSourceReg1(data, &apd)
+    parseRegOffset(data, &apd)
+    writeInsRegSrc1(data, &apd)
 
-    parseRegOffset(data, &apd, OffsetType.normal)
-    writeInsSourceReg2(data, &apd)
+    parseRegOffset(data, &apd)
+    writeInsRegSrc2(data, &apd)
 
-    writeInsAutoFillOffset(data, &apd, OffsetType.normal)
+    writeInsAutoFillOffset(data, &apd)
 
-fn<> parseInstructionCondBranch(AssemblerData* data, InsCode ic):
+fn<> parseInstructionCondBranch(AssemblerData* data, InsCode ic, OpSize ops):
     var<ArgParseData> apd
+    apd.offsetType = OffsetType.short
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
 
-    writeInsCondition(data, conditionFromInsCode(ic))
+    writeInsOpSize(data, ops)
 
-    parseRegOffset(data, &apd, OffsetType.short)
-    writeInsSourceReg1(data, &apd)
+    writeInsJmpCondition(data, conditionFromInsCode(ic))
 
-    parseRegOffset(data, &apd, OffsetType.short)
-    writeInsSourceReg2(data, &apd)
+    parseRegOffset(data, &apd)
+    writeInsRegSrc1(data, &apd)
 
-    writeInsAutoFillOffset(data, &apd, OffsetType.short)
+    parseRegOffset(data, &apd)
+    writeInsRegSrc2(data, &apd)
 
-    if isRelativeJump(ic):
-        writeInsRelativeJump(data, 1)
-    else:
-        writeInsRelativeJump(data, 0)
+    writeInsAutoFillOffset(data, &apd)
 
-fn<> parseInstructionMemRead(AssemblerData* data, InsCode ic):
+fn<> parseInstructionMemRead(AssemblerData* data, InsCode ic, OpSize ops):
     var<ArgParseData> apd
+    apd.offsetType = OffsetType.longContinuous
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
+
+    writeInsOpSize(data, ops)
 
     parseReg(data, &apd)
-    writeInsDestReg(data, apd.register)
+    writeInsRegDest(data, apd.register)
 
-    parseRegOffset(data, &apd, OffsetType.longContinuous)
-    writeInsSourceReg1(data, &apd)
+    parseRegOffset(data, &apd)
+    writeInsRegSrc1(data, &apd)
 
-    writeInsAutoFillOffset(data, &apd, OffsetType.longContinuous)
+    writeInsAutoFillOffset(data, &apd)
 
-fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic):
+fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic, OpSize ops):
     var<ArgParseData> apd
+    apd.offsetType = OffsetType.longSplit
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
-    
-    parseRegOffset(data, &apd, OffsetType.longSplit)
-    writeInsSourceReg1(data, &apd)
-    
-    parseRegOffset(data, &apd, OffsetType.longSplit)
-    writeInsSourceReg2(data, &apd)
 
-    writeInsAutoFillOffset(data, &apd, OffsetType.longSplit)
+    writeInsOpSize(data, ops)
+    
+    parseRegOffset(data, &apd)
+    writeInsRegSrc1(data, &apd)
+    
+    parseRegOffset(data, &apd)
+    writeInsRegSrc2(data, &apd)
+
+    writeInsAutoFillOffset(data, &apd)
 
 fn<> parseImmediateFull(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
         handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
-    parseLiteral(data, LiteralInsertMode.imm23)
+    parseLiteral(data, LiteralInsertMode.immLong)
 
 fn<> parseImmediatePartial(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
         handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
-    parseLiteral(data, LiteralInsertMode.imm16)
+    parseLiteral(data, LiteralInsertMode.immShort)
 
 fn<> parseInstructionImmLoadFull(AssemblerData* data, InsCode ic):
     var<ArgParseData> apd
@@ -460,7 +501,7 @@ fn<> parseInstructionImmLoadFull(AssemblerData* data, InsCode ic):
     apd.offsetAlreadyUsed = false
     
     parseReg(data, &apd)
-    writeInsDestReg(data, apd.register)
+    writeInsRegDest(data, apd.register)
 
     parseImmediateFull(data, &apd)
 
@@ -471,131 +512,13 @@ fn<> parseInstructionImmLoadPartial(AssemblerData* data, InsCode ic):
     apd.offsetAlreadyUsed = false
     
     parseReg(data, &apd)
-    writeInsDestReg(data, apd.register)
+    writeInsRegDest(data, apd.register)
 
-    writeInsSourceReg1(data, &apd)
+    writeInsRegSrc1(data, &apd)
 
     parseImmediatePartial(data, &apd)
 
-    writeInsUnused(data, 0b11, 14)
-    writeInsUnused(data, 0b1, 9)
-
-fn<> parseInstructionAlias(AssemblerData* data, InsCode ic):
-    var<ArgParseData> apd
-    apd.register = RegID.none
-    apd.hasOffset = false
-    apd.offsetAlreadyUsed = false
-    
-    if ic == InsCode.int:
-        writeInsOpCode(data, OpCode.int)
-        parseImmediateFull(data, &apd)
-        writeInsDestReg(data, RegID.zero)
-    elif ic == InsCode.not:
-        writeInsOpCode(data, OpCode.xor)
-
-        parseReg(data, &apd)
-        writeInsDestReg(data, apd.register)
-        parseReg(data, &apd)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = true
-        apd.offsetAlreadyUsed = true
-        writeInsSourceReg2(data, &apd)
-
-        writeInsOffset(data, -1, OffsetType.normal)
-    elif ic == InsCode.neg:
-        writeInsOpCode(data, OpCode.sub)
-
-        parseReg(data, &apd)
-        writeInsDestReg(data, apd.register)
-
-        apd.register = RegID.zero
-        apd.hasOffset = false
-        apd.offsetAlreadyUsed = false
-        writeInsSourceReg1(data, &apd)
-
-        parseRegOffset(data, &apd, OffsetType.normal)
-        writeInsSourceReg2(data, &apd)
-
-        writeInsAutoFillOffset(data, &apd, OffsetType.normal)
-    elif ic == InsCode.inc:
-        writeInsOpCode(data, OpCode.add)
-
-        parseReg(data, &apd)
-        writeInsDestReg(data, apd.register)
-
-        parseReg(data, &apd)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = true
-        apd.offsetAlreadyUsed = true
-        writeInsSourceReg2(data, &apd)
-
-        writeInsOffset(data, 1, OffsetType.normal)
-    elif ic == InsCode.dec:
-        writeInsOpCode(data, OpCode.sub)
-
-        parseReg(data, &apd)
-        writeInsDestReg(data, apd.register)
-
-        parseReg(data, &apd)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = true
-        apd.offsetAlreadyUsed = true
-        writeInsSourceReg2(data, &apd)
-
-        writeInsOffset(data, 1, OffsetType.normal)
-    elif ic == InsCode.jmp:
-        writeInsOpCode(data, OpCode.jxx)
-
-        writeInsCondition(data, CondID.z)
-
-        parseRegOffset(data, &apd, OffsetType.short)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = false
-        writeInsSourceReg2(data, &apd)
-
-        writeInsAutoFillOffset(data, &apd, OffsetType.short)
-
-        writeInsRelativeJump(data, 0)
-    elif ic == InsCode.jpr:
-        writeInsOpCode(data, OpCode.jxx)
-
-        writeInsCondition(data, CondID.z)
-
-        parseRegOffset(data, &apd, OffsetType.short)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = false
-        writeInsSourceReg2(data, &apd)
-
-        writeInsAutoFillOffset(data, &apd, OffsetType.short)
-
-        writeInsRelativeJump(data, 1)
-    elif ic == InsCode.mov:
-        writeInsOpCode(data, OpCode.add)
-        
-        parseReg(data, &apd)
-        writeInsDestReg(data, apd.register)
-
-        parseRegOffset(data, &apd, OffsetType.normal)
-        writeInsSourceReg1(data, &apd)
-
-        apd.register = RegID.zero
-        apd.hasOffset = false
-        writeInsSourceReg2(data, &apd)
-
-        writeInsAutoFillOffset(data, &apd, OffsetType.normal)
-    else:
-        handleAsmError("(internal): unknown alias instruction!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+    writeInsUnused(data, INS_IMM_SHORT_UNUSED_OFFSET, INS_IMM_SHORT_UNUSED_WIDTH)
 
 fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     var<u64> lineBegin = data->codeIndex
@@ -604,28 +527,27 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     if insCode == InsCode.none:
         return false
 
+    var opSize = parseOpSize(data)
+    if opSize == OpSize.none:
+        opSize = OpSize.word
+
     var opCode = opCodeFromInsCode(insCode)
     data->parityInstructions[data->nInstructions].line = data->line
     data->parityInstructions[data->nInstructions].instruction = 0
-    
-    if opCode != OpCode.insAlias:
-        writeInsOpCode(data, opCode)
 
     var insType = insTypeFromOpCode(opCode)
     if insType == InsType.threeArg:
-        parseInstructionThreeArg(data, insCode)
+        parseInstructionThreeArg(data, insCode, opSize)
     elif insType == InsType.condBranch:
-        parseInstructionCondBranch(data, insCode)
+        parseInstructionCondBranch(data, insCode, opSize)
     elif insType == InsType.memRead:
-        parseInstructionMemRead(data, insCode)
+        parseInstructionMemRead(data, insCode, opSize)
     elif insType == InsType.memWrite:
-        parseInstructionMemWrite(data, insCode)
+        parseInstructionMemWrite(data, insCode, opSize)
     elif insType == InsType.immLoadFull:
         parseInstructionImmLoadFull(data, insCode)
     elif insType == InsType.immLoadLower || insType == InsType.immLoadUpper:
         parseInstructionImmLoadPartial(data, insCode)
-    elif insType == InsType.insAlias:
-        parseInstructionAlias(data, insCode)
     else:
         handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
@@ -664,22 +586,19 @@ fn<> checkLiteralRange(i32 value, LiteralInsertMode lim, AssemblerData* data, u3
     var<i32> minVal = 0
     var<i32> maxVal = 0
 
-    if lim == LiteralInsertMode.imm16:
-        minVal = -32768 \\ -2 ** 15
-        maxVal =  32767 \\ 2 ** 15 - 1
-    elif lim == LiteralInsertMode.imm23:
-        minVal = -4194304 \\ -2 ** 22
-        maxVal =  4194303 \\ 2 ** 22 - 1
-    elif lim == LiteralInsertMode.offNormal:
-        minVal = -8192 \\  -2 ** 13
-        maxVal =  8191 \\   2 ** 13 - 1
+    if lim == LiteralInsertMode.immShort:
+        minVal = -std.pow(2, INS_IMM_SHORT_WIDTH - 1)
+        maxVal =  std.pow(2, INS_IMM_SHORT_WIDTH - 1) - 1
+    elif lim == LiteralInsertMode.immLong:
+        minVal = -std.pow(2, INS_IMM_LONG_WIDTH - 1)
+        maxVal =  std.pow(2, INS_IMM_LONG_WIDTH - 1) - 1
     elif lim == LiteralInsertMode.offShort:
-        minVal = -4096 \\  -2 ** 12
-        maxVal =  4095 \\   2 ** 12 - 1
+        minVal = -std.pow(2, INS_OFF_SHORT_WIDTH - 1)
+        maxVal =  std.pow(2, INS_OFF_SHORT_WIDTH - 1) - 1
     elif lim == LiteralInsertMode.offLongContinuous || \
         lim == LiteralInsertMode.offLongSplit:
-        minVal = -131072 \\  -2 ** 17
-        maxVal =  131071 \\   2 ** 17 - 1
+        minVal = -std.pow(2, INS_OFF_LONG_CONT_WIDTH - 1)
+        maxVal =  std.pow(2, INS_OFF_LONG_CONT_WIDTH - 1) - 1
     else:
         handleAsmError("(internal): literal insert mode not implemented!", data->filename, line, column, data->instructions)
         std.exit(1)
@@ -692,22 +611,19 @@ fn<> checkLiteralRange(i32 value, LiteralInsertMode lim, AssemblerData* data, u3
 fn<i32> extendLiteralValue(AssemblerData* data, i32 val, LiteralInsertMode lim) nodiscard:
     var<u32> mask
     var<u32> msb
-    if lim == LiteralInsertMode.imm16:
-        mask = 0b11111111111111110000000000000000
-        msb = 15
-    elif lim == LiteralInsertMode.imm23:
-        mask = 0b11111111100000000000000000000000
-        msb = 22
-    elif lim == LiteralInsertMode.offNormal:
-        mask = 0b11111111111111111100000000000000
-        msb = 13
+    if lim == LiteralInsertMode.immShort:
+        mask = ~widthToMask(data, INS_IMM_SHORT_WIDTH)
+        msb  =  INS_IMM_SHORT_WIDTH - 1
+    elif lim == LiteralInsertMode.immLong:
+        mask = ~widthToMask(data, INS_IMM_LONG_WIDTH)
+        msb  =  INS_IMM_LONG_WIDTH - 1
     elif lim == LiteralInsertMode.offShort:
-        mask = 0b11111111111111111110000000000000
-        msb = 12
+        mask = ~widthToMask(data, INS_OFF_SHORT_WIDTH)
+        msb  =  INS_OFF_SHORT_WIDTH - 1
     elif lim == LiteralInsertMode.offLongContinuous || \
         lim == LiteralInsertMode.offLongSplit:
-        mask = 0b11111111111111000000000000000000
-        msb = 17
+        mask = ~widthToMask(data, INS_OFF_LONG_CONT_WIDTH)
+        msb  =  INS_OFF_LONG_CONT_WIDTH - 1
     else:
         handleAsmError("(internal): literal insert mode not implemented!", data->filename, data->line, data->column, data->instructions)
         std.exit(1)
@@ -750,10 +666,10 @@ fn<> insertLiterals(AssemblerData* data):
         value = extendLiteralValue(data, value, litInfo->insertMode)
         checkLiteralRange(value, litInfo->insertMode, data, data->line, data->column)
 
-        if litInfo->insertMode == LiteralInsertMode.imm16:
-            writeInsImmediatePartial(data, value)
-        elif litInfo->insertMode == LiteralInsertMode.imm23:
-            writeInsImmediateFull(data, value)
+        if litInfo->insertMode == LiteralInsertMode.immShort:
+            writeInsImmShort(data, value)
+        elif litInfo->insertMode == LiteralInsertMode.immLong:
+            writeInsImmLong(data, value)
         else:
             writeInsOffset(data, value, offsetTypeFromLitInsMode(litInfo->insertMode))
 

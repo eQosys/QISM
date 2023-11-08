@@ -1,3 +1,46 @@
+
+define INS_OPCODE_OFFSET                 0
+define INS_OPCODE_WIDTH                  5
+
+define INS_REG_DEST_OFFSET               5
+define INS_REG_DEST_WIDTH                4
+
+define INS_JMP_COND_OFFSET               5
+define INS_JMP_COND_WIDTH                4
+
+define INS_OP_SIZE_OFFSET                9
+define INS_OP_SIZE_WIDTH                 2
+
+define INS_OFF_SEL_OFFSET               11
+define INS_OFF_SEL_WIDTH                 1
+
+define INS_REG_SRC1_OFFSET              12
+define INS_REG_SRC1_WIDTH                4
+
+define INS_REG_SRC2_OFFSET              16
+define INS_REG_SRC2_WIDTH                4
+
+define INS_IMM_LONG_OFFSET               9
+define INS_IMM_LONG_WIDTH               23
+
+define INS_IMM_SHORT_OFFSET             16
+define INS_IMM_SHORT_WIDTH              16
+
+define INS_IMM_SHORT_UNUSED_OFFSET       9
+define INS_IMM_SHORT_UNUSED_WIDTH        3
+
+define INS_OFF_SHORT_OFFSET             20
+define INS_OFF_SHORT_WIDTH              12
+
+define INS_OFF_LONG_CONT_OFFSET         16
+define INS_OFF_LONG_CONT_WIDTH          16
+
+define INS_OFF_LONG_SPLIT_LWR_OFFSET     5
+define INS_OFF_LONG_SPLIT_LWR_WIDTH      4
+
+define INS_OFF_LONG_SPLIT_UPR_OFFSET    20
+define INS_OFF_LONG_SPLIT_UPR_WIDTH     12
+
 enum InsCode:
     none,
     add, sub,
@@ -8,28 +51,34 @@ enum InsCode:
     st, ld,
     lui, lli, li,
     int,
-    not, neg,
-    inc, dec,
-    jmp, jpr,
-    mov
+    not,
+    jpr
 
 enum OpCode:
-    none     = 0b111111,
-    insAlias = 0b111110,
-    add  = 0b00000,
-    sub  = 0b00001,
-    and  = 0b00010,
-    or   = 0b00011,
-    xor  = 0b00100,
-    shl  = 0b00101,
-    shr  = 0b00110,
-    jxx  = 0b00111,
-    st   = 0b01000,
-    ld   = 0b01001,
-    lui  = 0b01010,
-    lli  = 0b01011,
-    li   = 0b01100,
-    int  = 0b01101
+    add      = 0b00000,
+    sub      = 0b00001,
+    mul      = 0b00010,
+    div      = 0b00011,
+    imul     = 0b00100,
+    idiv     = 0b00101,
+    and      = 0b00110,
+    or       = 0b00111,
+    xor      = 0b01000,
+    shl      = 0b01001,
+    shr      = 0b01010,
+    sal      = 0b01011,
+    sar      = 0b01100,
+    rol      = 0b01101,
+    ror      = 0b01110,
+    jxx      = 0b01111,
+    jrx      = 0b10000,
+    st       = 0b10001,
+    ld       = 0b10010,
+    lui      = 0b10011,
+    lli      = 0b10100,
+    li       = 0b10101,
+    int      = 0b10110,
+    none     = 0b111111
 
 enum InsType:
     none,
@@ -39,8 +88,7 @@ enum InsType:
     memWrite,
     immLoadFull,
     immLoadUpper,
-    immLoadLower,
-    insAlias
+    immLoadLower
 
 enum RegID:
     zero = 0b0000,
@@ -62,20 +110,26 @@ enum RegID:
     none = 0b11111
 
 enum CondID:
-    z  = 0b0000,
-    nz = 0b0001,
-    gz = 0b0010,
-    lz = 0b0011,
-    ge = 0b0100,
-    le = 0b0101,
+    z    = 0b0000,
+    nz   = 0b0001,
+    gz   = 0b0010,
+    lz   = 0b0011,
+    ge   = 0b0100,
+    le   = 0b0101,
     none = 0b11111
 
+enum OpSize:
+    byte  = 0b00,
+    half  = 0b01,
+    word  = 0b10,
+    dword = 0b11,
+    none  = 0b111
+
 enum OffsetType:
-    none,
-    normal,
-    short,
-    longContinuous,
-    longSplit
+    short          = 0b00,
+    longContinuous = 0b01,
+    longSplit      = 0b10,
+    none           = 0b111
 
 enum LiteralMode:
     Default,
@@ -85,9 +139,8 @@ enum LiteralMode:
 
 enum LiteralInsertMode:
     none,
-    imm16,
-    imm23,
-    offNormal,
+    immShort,
+    immLong,
     offShort,
     offLongContinuous,
     offLongSplit
@@ -104,14 +157,12 @@ pack LiteralInfo:
 
 
 fn<LiteralInsertMode> litInsModeFromOffsetType(OffsetType ot) nodiscard:
-    if ot == OffsetType.normal: return LiteralInsertMode.offNormal
     if ot == OffsetType.short: return LiteralInsertMode.offShort
     if ot == OffsetType.longContinuous: return LiteralInsertMode.offLongContinuous
     if ot == OffsetType.longSplit: return LiteralInsertMode.offLongSplit
     return LiteralInsertMode.none
 
 fn<OffsetType> offsetTypeFromLitInsMode(LiteralInsertMode lim) nodiscard:
-    if lim == LiteralInsertMode.offNormal: return OffsetType.normal
     if lim == LiteralInsertMode.offShort: return OffsetType.short
     if lim == LiteralInsertMode.offLongContinuous: return OffsetType.longContinuous
     if lim == LiteralInsertMode.offLongSplit: return OffsetType.longSplit
@@ -144,12 +195,7 @@ fn<InsCode> insCodeFromStr(std.String const* str) nodiscard:
     if str->equals("li"): return InsCode.li
     if str->equals("int"): return InsCode.int
     if str->equals("not"): return InsCode.not
-    if str->equals("neg"): return InsCode.neg
-    if str->equals("inc"): return InsCode.inc
-    if str->equals("dec"): return InsCode.dec
-    if str->equals("jmp"): return InsCode.jmp
     if str->equals("jpr"): return InsCode.jpr
-    if str->equals("mov"): return InsCode.mov
     return InsCode.none
 
 fn<u8 const*> insCodeToStr(InsCode ic) nodiscard:
@@ -179,12 +225,7 @@ fn<u8 const*> insCodeToStr(InsCode ic) nodiscard:
     if ic == InsCode.li: return "li"
     if ic == InsCode.int: return "int"
     if ic == InsCode.not: return "not"
-    if ic == InsCode.neg: return "neg"
-    if ic == InsCode.inc: return "inc"
-    if ic == InsCode.dec: return "dec"
-    if ic == InsCode.jmp: return "jmp"
     if ic == InsCode.jpr: return "jpr"
-    if ic == InsCode.mov: return "mov"
     return "none"
 
 fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
@@ -207,12 +248,6 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.lui: return OpCode.lui
     if ic == InsCode.lli: return OpCode.lli
     if ic == InsCode.li: return OpCode.li
-    if ic == InsCode.int || \
-        ic == InsCode.not || ic == InsCode.neg || \
-        ic == InsCode.inc || ic == InsCode.dec || \
-        ic == InsCode.jmp || ic == InsCode.jpr || \
-        ic == InsCode.mov:
-        return OpCode.insAlias
     return OpCode.none
 
 fn<InsCode> insCodeFromOpCodeAndCond(OpCode oc, CondID cid) nodiscard:
@@ -256,8 +291,6 @@ fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
         return InsType.immLoadLower
     if oc == OpCode.li || oc == OpCode.int:
         return InsType.immLoadFull
-    if oc == OpCode.insAlias:
-        return InsType.insAlias
 
     handleMsgError("(internal): unknown opcode!")
     return InsType.none
@@ -300,16 +333,6 @@ fn<u8 const*> regIDToStr(RegID rid) nodiscard:
     if rid == RegID.rled: return "rled"
     return "none"
 
-fn<bool> isRelativeJump(InsCode ic) nodiscard:
-    return ic == InsCode.jrz || ic == InsCode.jrnz || \
-        ic == InsCode.jrgz || ic == InsCode.jrlz || \
-        ic == InsCode.jrge || ic == InsCode.jrle
-
-fn<bool> isAbsoluteJump(InsCode ic) nodiscard:
-    return ic == InsCode.jz || ic == InsCode.jnz || \
-        ic == InsCode.jgz || ic == InsCode.jlz || \
-        ic == InsCode.jge || ic == InsCode.jle
-
 fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.jz || ic == InsCode.jrz:
         return CondID.z
@@ -327,4 +350,4 @@ fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
     return CondID.none
 
 fn<OffsetType> offsetTypeFromInsType(InsType it) nodiscard:
-    return OffsetType.normal
+    return OffsetType.none

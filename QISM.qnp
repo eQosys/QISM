@@ -59,7 +59,7 @@ import "stdio.qnp"
 import "system.qnp"
 import "fileio.qnp"
 import "assembler.qnp"
-import "disassembler.qnp"
+\\import "disassembler.qnp"
 import "filewriter.qnp"
 
 \\ Read a file into a string.
