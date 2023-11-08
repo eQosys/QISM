@@ -82,15 +82,32 @@ fn<i32> readInsImmediatePartial(u32 instruction):
 
     return imm
 
+fn<> appendOptionalOffset(std.String* txt, bool cond, bool offSel, i32 offset):
+    if (cond == offSel) && (offset != 0):
+        txt->push_back('(')
+        txt->append(std.itos(offset))
+        txt->push_back(')')
+
 fn<> disasmInsThreeArg(u32 instruction, std.String* txt):
     var opCode = readInsOpCode(instruction)
     var destReg = readInsDestReg(instruction)
     var srcReg1 = readInsSourceReg1(instruction)
     var srcReg2 = readInsSourceReg2(instruction)
 
+    var offSel = readInsOffsetSelect(instruction)
+    var offset = readInsOffset(instruction, offsetTypeFromInsType(insTypeFromOpCode(opCode)))
+
     var insCode = insCodeFromOpCodeAndCond(opCode, CondID.none)
 
     txt->append(insCodeToStr(insCode))
+    txt->push_back(' ')
+    txt->append(regIDToStr(destReg))
+    txt->push_back(' ')
+    txt->append(regIDToStr(srcReg1))
+    appendOptionalOffset(txt, false, offSel, offset)
+    txt->push_back(' ')
+    txt->append(regIDToStr(srcReg2))
+    appendOptionalOffset(txt, true, offSel, offset)
 
 fn<std.String*> disasmInstruction(u32 instruction):
     var txt = std.new(std.String)

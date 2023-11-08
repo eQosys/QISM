@@ -325,3 +325,6 @@ fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
         return CondID.le
 
     return CondID.none
+
+fn<OffsetType> offsetTypeFromInsType(InsType it) nodiscard:
+    return OffsetType.normal
