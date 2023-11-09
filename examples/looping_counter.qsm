@@ -8,10 +8,7 @@ xor r0 r0 r0
 add r0 r0 zero(1)
 jrz zero(rel loop) zero
 
-int 1
-
 ld r1 r0
-
 
 xor r0 r1 zero(-1)
 

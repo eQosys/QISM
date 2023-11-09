@@ -535,6 +535,8 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     data->parityInstructions[data->nInstructions].line = data->line
     data->parityInstructions[data->nInstructions].instruction = 0
 
+    writeInsOpCode(data, opCode)
+
     var insType = insTypeFromOpCode(opCode)
     if insType == InsType.threeArg:
         parseInstructionThreeArg(data, insCode, opSize)
@@ -689,6 +691,37 @@ fn<> checkParity(AssemblerData* data):
         ++i
     std.free(data->parityInstructions)
 
+fn<LiteralInfo*> generatePrologue(AssemblerData* data) nodiscard:
+    \\ Reserve space for program size
+    if data->addAnnotations:
+        data->annotations[data->nInstructions] = std.new(std.String, "[ program size in bytes ]")
+    ++data->nInstructions
+
+    \\ Setup jump to entrypoint
+    var<ArgParseData> apd
+    apd.offsetType = OffsetType.short
+    apd.register = RegID.zero
+    apd.hasOffset = true
+    apd.offsetAlreadyUsed = true
+    
+    var litInfo = makeLitInfo(data, LiteralInsertMode.offShort)
+
+    writeInsOpCode(data, OpCode.jxx)
+    writeInsOpSize(data, OpSize.word)
+    writeInsJmpCondition(data, CondID.z)
+    
+    writeInsRegSrc1(data, &apd)
+
+    apd.hasOffset = false
+    writeInsRegSrc2(data, &apd)
+    writeInsAutoFillOffset(data, &apd)
+
+    if data->addAnnotations:
+        data->annotations[data->nInstructions] = std.new(std.String, "[ jump to specified entrypoint ]")
+    ++data->nInstructions
+
+    return litInfo
+
 fn<> assemble(AssemblerData* data):
     data->line = 1
     data->column = 1
@@ -709,7 +742,7 @@ fn<> assemble(AssemblerData* data):
     data->literals = std.new(std.List)
 
     var lc = lineCount(data->code)
-    var instrBuffSize = lc * 4
+    var instrBuffSize = (lc + 4) * 4
     if data->verbose: std.println("  info: allocating % bytes of instruction memory...", instrBuffSize)
     data->instructions = (u32*)std.malloc(instrBuffSize)
     if data->instructions == null:
@@ -731,6 +764,8 @@ fn<> assemble(AssemblerData* data):
             handleMsgError("failed to allocate instruction line memory")
             std.exit(1)
 
+    var epLitInfo = generatePrologue(data)
+
     while data->codeIndex < data->codeLength:
         parseWhitespace(data)
 
@@ -747,10 +782,19 @@ fn<> assemble(AssemblerData* data):
         handleMsgError("no entrypoint specified!")
         std.exit(1)
 
+    epLitInfo->label = data->entrypointName
+    data->literals->push_back(epLitInfo)
+
     if data->verbose: std.println("  info: # of instructions: %", data->nInstructions)
 
     if data->verbose: std.println("  info: inserting literals...")
     insertLiterals(data)
+
+    if data->verbose: std.println("  info: writing program size...")
+    var nInstructions = data->nInstructions
+    data->nInstructions = 0
+    writeInsPart(data, nInstructions * 4, 0, 32)
+    data->nInstructions = nInstructions
 
     if data->verbose: std.println("  info: checking parity...")
     checkParity(data)
