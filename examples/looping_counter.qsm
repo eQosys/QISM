@@ -1,8 +1,5 @@
 ~~ Sets the r0 register to 0 and then loops and increments it forever
 
-.entry begin
-
-::begin
 xor r0 r0 r0
 ::loop
 add r0 r0 zero(1)

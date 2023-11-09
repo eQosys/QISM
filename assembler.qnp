@@ -32,7 +32,6 @@ pack AssemblerData:
     var<u32*> instructions
     var<ParityInstruction*> parityInstructions
     var<std.String**> annotations
-    var<std.String*> entrypointName
     var<std.Map*> labels
     var<std.List*> literals
 
@@ -40,7 +39,6 @@ pack AssemblerData:
 
 fn<> freeAsmData(AssemblerData* data):
     std.free(data->instructions)
-    std.free(data->entrypointName)
     if data->annotations != null:
         var i = 0
         while i < data->nInstructions:
@@ -190,40 +188,6 @@ fn<std.String*> parseAlNum(AssemblerData* data, bool allowNegative) nodiscard:
         ++data->column
 
     return str
-
-fn<bool> parseEntrypoint(AssemblerData* data) nodiscard:
-    if !parseExact(data, "."):
-        return false
-
-    if !parseExact(data, "entry"):
-        handleAsmError("expected 'entry' after '.'!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    if data->entrypointName != null:
-        handleAsmError("entrypoint already defined!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    if !parseWhitespace(data):
-        handleAsmError("expected whitespace after '.entry'!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    var name = parseAlNum(data, false)
-
-    if name->length() == 0:
-        handleAsmError("expected entrypoint name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    parseWhitespace(data)
-    if !parseNewline(data):
-        handleAsmError("expected newline after entrypoint name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    data->entrypointName = name
-
-    if data->verbose:
-        std.println("  info: entrypoint set to '%'", name->raw())
-    
-    return true
 
 fn<bool> parseLabel(AssemblerData* data) nodiscard:
     if !parseExact(data, ":"):
@@ -699,7 +663,6 @@ fn<> assemble(AssemblerData* data):
     data->nInstructions = 0
     data->instructions = null
     data->annotations = null
-    data->entrypointName = null
     data->labels = std.new(std.Map, \
         lambda<bool>(void const* a, void const* b): \
             return ((std.String const*)a)->compare((std.String const*)b) == std.Order.Less;, \
@@ -737,16 +700,11 @@ fn<> assemble(AssemblerData* data):
         parseWhitespace(data)
 
         if parseNewline(data): continue
-        if parseEntrypoint(data): continue
         if parseLabel(data): continue
         if parseInstruction(data): continue
         if parseComment(data): continue
         
         handleAsmError("unexpected character!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
-
-    if data->entrypointName == null:
-        handleMsgError("no entrypoint specified!")
         std.exit(1)
 
     if data->verbose: std.println("  info: # of instructions: %", data->nInstructions)
