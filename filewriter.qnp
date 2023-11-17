@@ -20,8 +20,8 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
     if outputFormat == OutputFormat.bin:
         buffer[0] = (instruction >> 24) & 0xFF
         buffer[1] = (instruction >> 16) & 0xFF
-        buffer[2] = (instruction >> 8) & 0xFF
-        buffer[3] = (instruction >> 0) & 0xFF
+        buffer[2] = (instruction >>  8) & 0xFF
+        buffer[3] = (instruction >>  0) & 0xFF
         return 4
     if outputFormat == OutputFormat.bintxt:
         var<u64> len = 0
@@ -29,9 +29,9 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = '_'
-        len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 2, 8))
+        len += std.strlen(itos((instruction >>  8) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = '_'
-        len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 2, 8))
+        len += std.strlen(itos((instruction >>  0) & 0xFF, buffer + len, 2, 8))
         return len
     if outputFormat == OutputFormat.hextxt:
         var<u64> len = 0
@@ -39,9 +39,9 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         buffer[len++] = '_'
         len += std.strlen(itos((instruction >> 16) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = '_'
-        len += std.strlen(itos((instruction >> 8) & 0xFF, buffer + len, 16, 2))
+        len += std.strlen(itos((instruction >>  8) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = '_'
-        len += std.strlen(itos((instruction >> 0) & 0xFF, buffer + len, 16, 2))
+        len += std.strlen(itos((instruction >>  0) & 0xFF, buffer + len, 16, 2))
         return len
 
     handleMsgError("Invalid output format!")
@@ -60,8 +60,8 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
     if outputFormat == OutputFormat.bin:
         buffer[0] = (fileSize >> 24) & 0xFF
         buffer[1] = (fileSize >> 16) & 0xFF
-        buffer[2] = (fileSize >> 8) & 0xFF
-        buffer[3] = (fileSize >> 0) & 0xFF
+        buffer[2] = (fileSize >>  8) & 0xFF
+        buffer[3] = (fileSize >>  0) & 0xFF
         if file->write(buffer, 4) != 4:
             std.delete(file)
             return handleMsgError("Could not write to output file!")
