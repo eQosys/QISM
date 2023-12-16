@@ -272,7 +272,7 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
     apd->hasOffset = false
 
 fn<LiteralInfo*> makeLitInfo(AssemblerData const* data, LiteralInsertMode lim):
-    var li = (LiteralInfo*)std.malloc(sizeof(LiteralInfo))
+    var li = std.new(LiteralInfo)
     li->mode = LiteralMode.Default
     li->insertMode = lim
     li->insIndex = data->nInstructions
@@ -671,7 +671,7 @@ fn<> assemble(AssemblerData* data):
         lambda<void>(void* value): \
             pass; \
         )
-    data->literals = std.new(std.List)
+    data->literals = std.new(std.List, std.LMBD_DELETE_DT(LiteralInfo))
 
     var lc = lineCount(data->code)
     var instrBuffSize = lc * 4

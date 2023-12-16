@@ -154,7 +154,14 @@ pack LiteralInfo:
     var<u32> line
     var<u32> column
 
+    fn<bool> __new__(LiteralInfo* self) nodiscard:
+        self->label = null
+        return true
 
+    fn<> __delete__(LiteralInfo* self):
+        if self->label != null:
+            std.delete(self->label)
+        self->label = null
 
 fn<LiteralInsertMode> litInsModeFromOffsetType(OffsetType ot) nodiscard:
     if ot == OffsetType.short: return LiteralInsertMode.offShort
