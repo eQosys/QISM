@@ -1,0 +1,49 @@
+code:
+    `instruction`
+    `label`
+    `data`
+    `comment`
+
+instruction:
+    `instruction_name`[.`data_size`] [`instruction_argument`]*
+
+instruction_name:
+    add
+    sub
+    mul
+    div
+    and
+    or
+    xor
+    ...
+
+data_size:
+    b[yte]
+    h[alf]
+    w[ord]
+    d[ouble]
+
+instruction_argument:
+    `register`[(`literal`)]
+    `literal`
+
+register:
+    zero
+    r0
+    r1
+    ...
+
+literal:
+
+
+label:
+    ->`label_name`
+
+data:
+    .`data_size` `literal`[, `literal`]*
+
+comment:
+    ~~`comment_text`
+
+comment_text:
+    [^~]*
