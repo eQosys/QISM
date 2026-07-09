@@ -1,5 +1,5 @@
 enum OutputFormat:
-    bin, bintxt, hextxt
+    bin, bintxt, hextxt, qism
 
 fn<u8 const*> getOutputFormatName(OutputFormat format):
     if format == OutputFormat.bin:
@@ -8,5 +8,7 @@ fn<u8 const*> getOutputFormatName(OutputFormat format):
         return "bintxt"
     elif format == OutputFormat.hextxt:
         return "hextxt"
+    elif format == OutputFormat.qism:
+        return "qism"
 
     return "unknown"

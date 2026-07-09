@@ -1,16 +1,3 @@
-\\ Usage: qism [options*] <input_file>
-\\
-\\ Options:
-\\   -h                  show this help message and exit
-\\   -o=<output_file>    output file name
-\\                        default: <input_file>.bin
-\\   -v                  verbose mode
-\\   -f=<format>         output format
-\\                        default: bin
-\\                        options: bintxt, hextxt
-\\   -a                  add annotations to output file
-\\                       only works with bintxt and hextxt formats
-
 \\ Registers:
 \\   zero                zero register
 \\   gp                  global pointer
@@ -60,42 +47,8 @@ import "system.qnp"
 import "fileio.qnp"
 import "assembler.qnp"
 \\import "disassembler.qnp"
+import "filereader.qnp"
 import "filewriter.qnp"
-
-\\ Read a file into a string.
-fn<std.String*> readFile(std.String const* filename):
-    var file = std.new(std.File, filename->raw(), "r")
-    if file == null:
-        handleMsgError("Could not open file for reading!")
-        return null
-
-    var size = file->size()
-
-    if size == std.limits.U64_MAX:
-        handleMsgError("Could not get file size!")
-        std.delete(file)
-        return null
-
-    var buffer = (u8*)std.malloc(size + 1)
-    if buffer == null:
-        handleMsgError("Could not allocate memory for file reading!")
-        std.delete(file)
-        return null
-
-    var nRead = file->read(buffer, size)
-    std.delete(file)
-    if nRead != size:
-        handleMsgError("Could not read file!")
-        std.free(buffer)
-        return null
-
-    var str = std.new(std.String, buffer, size)
-    if str == null:
-        handleMsgError("Could not allocate memory for file reading!")
-        std.free(buffer)
-        return null
-
-    return str
 
 \\ Print help message.
 fn<> printHelp():
@@ -104,11 +57,11 @@ fn<> printHelp():
     std.println("Options:")
     std.println("  -h                  show this help message and exit")
     std.println("  -o=<output_file>    output file name")
-    std.println("                       default: <input_file>.bin")
+    std.println("                       default: <input_file>.bin / <input_file>.qism")
     std.println("  -v                  verbose mode")
     std.println("  -f=<format>         output format")
     std.println("                       default: bin")
-    std.println("                       options: bintxt, hextxt")
+    std.println("                       options: bintxt, hextxt, qism")
     std.println("  -a                  add annotations to output file")
     std.println("                       ignored if output format is bin")
 
@@ -146,6 +99,8 @@ while argv[++argi] != null:
             outputFormat = OutputFormat.bintxt
         elif arg->equals("-f=hextxt"):
             outputFormat = OutputFormat.hextxt
+        elif arg->equals("-f=qism"):
+            outputFormat = OutputFormat.qism
         else:
             std.println("error: invalid output format!")
             std.delete(arg)
@@ -175,10 +130,13 @@ if inputFilename == null:
     std.println("error: no input file!")
     std.exit(1)
 
-\\ If output file was not specified, use input file name with .bin extension
+\\ If output file was not specified, use input file name with .bin/.qism extension
 if outputFilename == null:
     outputFilename = std.new(std.String, inputFilename->raw())
-    outputFilename->append(".bin")
+    if outputFormat == OutputFormat.qism:
+        outputFilename->append(".qism")
+    else:
+        outputFilename->append(".bin")
 
 \\ Print option values if verbose
 if verbose:

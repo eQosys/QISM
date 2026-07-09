@@ -1,0 +1,36 @@
+import "fileio.qnp"
+
+\\ Read a file into a string.
+fn<std.String*> readFile(std.String const* filename):
+    var file = std.new(std.File, filename->raw(), "r")
+    if file == null:
+        handleMsgError("Could not open file for reading!")
+        return null
+
+    var size = file->size()
+
+    if size == std.limits.U64_MAX:
+        handleMsgError("Could not get file size!")
+        std.delete(file)
+        return null
+
+    var buffer = (u8*)std.malloc(size + 1)
+    if buffer == null:
+        handleMsgError("Could not allocate memory for file reading!")
+        std.delete(file)
+        return null
+
+    var nRead = file->read(buffer, size)
+    std.delete(file)
+    if nRead != size:
+        handleMsgError("Could not read file!")
+        std.free(buffer)
+        return null
+
+    var str = std.new(std.String, buffer, size)
+    if str == null:
+        handleMsgError("Could not allocate memory for file reading!")
+        std.free(buffer)
+        return null
+
+    return str
