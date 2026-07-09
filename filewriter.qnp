@@ -16,14 +16,14 @@ fn<u8 const*> itos(i64 num, u8* buffer, i64 base, i64 width):
 
     return buffer
 
-fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFormat):
-    if outputFormat == OutputFormat.bin:
+fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, DataFormat dataFormat):
+    if dataFormat == DataFormat.bin:
         buffer[0] = (instruction >> 24) & 0xFF
         buffer[1] = (instruction >> 16) & 0xFF
         buffer[2] = (instruction >>  8) & 0xFF
         buffer[3] = (instruction >>  0) & 0xFF
         return 4
-    if outputFormat == OutputFormat.bintxt:
+    if dataFormat == DataFormat.bintxt:
         var<u64> len = 0
         len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 2, 8))
         buffer[len++] = '_'
@@ -33,7 +33,7 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
         buffer[len++] = '_'
         len += std.strlen(itos((instruction >>  0) & 0xFF, buffer + len, 2, 8))
         return len
-    if outputFormat == OutputFormat.hextxt:
+    if dataFormat == DataFormat.hextxt:
         var<u64> len = 0
         len += std.strlen(itos((instruction >> 24) & 0xFF, buffer + len, 16, 2))
         buffer[len++] = '_'
@@ -47,7 +47,7 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, OutputFormat outputFor
     handleMsgError("Invalid output format!")
     return 0
 
-fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, OutputFormat outputFormat):
+fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, DataFormat dataFormat):
     var file = std.new(std.File, filename->raw(), "w")
     if file == null:
         return handleMsgError("Could not open output file for writing!")
@@ -55,9 +55,8 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
     var<u64> i = 0
     var<u8[64]> buffer
 
-    var<u32> fileSize = 4 + (data->nInstructions * 4)
-
-    if outputFormat == OutputFormat.bin:
+    if dataFormat == DataFormat.bin:
+        var<u32> fileSize = 4 + (data->nInstructions * 4)
         buffer[0] = (fileSize >> 24) & 0xFF
         buffer[1] = (fileSize >> 16) & 0xFF
         buffer[2] = (fileSize >>  8) & 0xFF
@@ -67,7 +66,7 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
             return handleMsgError("Could not write to output file!")
 
     while i < data->nInstructions:
-        var bufferSize = genInstructionBuffer(buffer, data->instructions[i], outputFormat)
+        var bufferSize = genInstructionBuffer(buffer, data->instructions[i], dataFormat)
         if bufferSize == 0:
             std.delete(file)
             return false
@@ -76,7 +75,7 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
             std.delete(file)
             return handleMsgError("Could not write to output file!")
 
-        if data->addAnnotations && outputFormat != OutputFormat.bin:
+        if data->addAnnotations && dataFormat != DataFormat.bin:
             static annotationBegin = "    // "
             static annotationBeginLength = std.strlen(annotationBegin)
             var annotation = data->annotations[i]
@@ -89,7 +88,7 @@ fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, Outp
                 std.delete(file)
                 return handleMsgError("Could not write to output file!")
         
-        if outputFormat != OutputFormat.bin && file->write("\n", 1) != 1:
+        if dataFormat != DataFormat.bin && file->write("\n", 1) != 1:
             std.delete(file)
             return handleMsgError("Could not write to output file!")
         ++i

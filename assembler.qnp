@@ -671,7 +671,7 @@ fn<> assemble(AssemblerData* data):
         lambda<void>(void* value): \
             pass; \
         )
-    data->literals = std.new(std.List, std.LMBD_DELETE_DT(LiteralInfo))
+    data->literals = std.new(std.List, (std.FN_DELETE)null) \\ We handle deleting literals ourselves
 
     var lc = lineCount(data->code)
     var instrBuffSize = lc * 4

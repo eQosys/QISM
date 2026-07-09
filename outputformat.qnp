@@ -1,14 +1,14 @@
-enum OutputFormat:
+enum DataFormat:
     bin, bintxt, hextxt, qism
 
-fn<u8 const*> getOutputFormatName(OutputFormat format):
-    if format == OutputFormat.bin:
+fn<u8 const*> getOutputFormatName(DataFormat format):
+    if format == DataFormat.bin:
         return "bin"
-    elif format == OutputFormat.bintxt:
+    elif format == DataFormat.bintxt:
         return "bintxt"
-    elif format == OutputFormat.hextxt:
+    elif format == DataFormat.hextxt:
         return "hextxt"
-    elif format == OutputFormat.qism:
+    elif format == DataFormat.qism:
         return "qism"
 
     return "unknown"

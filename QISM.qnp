@@ -50,6 +50,9 @@ import "assembler.qnp"
 import "filereader.qnp"
 import "filewriter.qnp"
 
+enum OperationMode:
+    Assemble, Disassemble
+
 \\ Print help message.
 fn<> printHelp():
     std.println("Usage: qism [options*] <input_file>")
@@ -57,20 +60,22 @@ fn<> printHelp():
     std.println("Options:")
     std.println("  -h                  show this help message and exit")
     std.println("  -o=<output_file>    output file name")
-    std.println("                       default: <input_file>.bin / <input_file>.qism")
+    std.println("                       default: <input_file>.bin / <input_file>.qsm")
     std.println("  -v                  verbose mode")
-    std.println("  -f=<format>         output format")
+    std.println("  -f=<format>         data format")
     std.println("                       default: bin")
-    std.println("                       options: bintxt, hextxt, qism")
-    std.println("  -a                  add annotations to output file")
+    std.println("                       options: bintxt, hextxt")
+    std.println("  -a                  add annotations to output file (ignored with -d)")
+    std.println("  -d                  disassembly mode")
     std.println("                       ignored if output format is bin")
 
 \\ Option variables
 var<std.String*> inputFilename = null
 var<std.String*> outputFilename = null
-var<OutputFormat> outputFormat = OutputFormat.bin
+var<DataFormat> dataFormat = DataFormat.bin
 var<bool> verbose = false
 var<bool> addAnnotations = false
+var<OperationMode> operationMode = OperationMode.Assemble
 
 var<u8* const*> argv
 var<u64> argc = std.getargs(&argv)
@@ -94,13 +99,11 @@ while argv[++argi] != null:
         continue
     elif arg->beginswith("-f="):
         if arg->equals("-f=bin"):
-            outputFormat = OutputFormat.bin
+            dataFormat = DataFormat.bin
         elif arg->equals("-f=bintxt"):
-            outputFormat = OutputFormat.bintxt
+            dataFormat = DataFormat.bintxt
         elif arg->equals("-f=hextxt"):
-            outputFormat = OutputFormat.hextxt
-        elif arg->equals("-f=qism"):
-            outputFormat = OutputFormat.qism
+            dataFormat = DataFormat.hextxt
         else:
             std.println("error: invalid output format!")
             std.delete(arg)
@@ -109,6 +112,10 @@ while argv[++argi] != null:
         continue
     elif arg->equals("-a"):
         addAnnotations = true
+        std.delete(arg)
+        continue
+    elif arg->equals("-d"):
+        operationMode = OperationMode.Disassemble
         std.delete(arg)
         continue
     
@@ -130,26 +137,28 @@ if inputFilename == null:
     std.println("error: no input file!")
     std.exit(1)
 
-\\ If output file was not specified, use input file name with .bin/.qism extension
+\\ If output file was not specified, use input file name with .bin/.qsm extension
 if outputFilename == null:
     outputFilename = std.new(std.String, inputFilename->raw())
-    if outputFormat == OutputFormat.qism:
-        outputFilename->append(".qism")
-    else:
+    if operationMode == OperationMode.Assemble:
         outputFilename->append(".bin")
+    elif operationMode == OperationMode.Disassemble:
+        outputFilename->append(".qsm")
 
 \\ Print option values if verbose
 if verbose:
     std.println("Selected options:")
     std.println("  Input file:      %", inputFilename->raw())
     std.println("  Output file:     %", outputFilename->raw())
-    std.println("  Output format:   % (%)", (i64)outputFormat, getOutputFormatName(outputFormat))
+    std.println("  Data format:     % (%)", (i64)dataFormat, getOutputFormatName(dataFormat))
     std.println("  Verbose:         %", verbose)
     std.println("  Add annotations: %", addAnnotations)
-
+    std.println("  Operation mode:  % (%)", (i64)operationMode, \
+                                            operationMode == OperationMode.Assemble \
+                                            ? "asm" : "disasm")
 
 if verbose: std.println("Reading input file...")
-var codeText = readFile(inputFilename)
+var codeText = readTextFile(inputFilename)
 if codeText == null:
     std.delete(inputFilename)
     std.delete(outputFilename)
@@ -165,7 +174,7 @@ asmData.addAnnotations = addAnnotations
 assemble(&asmData)
 
 if verbose: std.println("Writing output file...")
-if !writeToFile(outputFilename, &asmData, outputFormat):
+if !writeToFile(outputFilename, &asmData, dataFormat):
     std.delete(codeText)
     std.delete(inputFilename)
     std.delete(outputFilename)

@@ -1,7 +1,7 @@
 import "fileio.qnp"
 
 \\ Read a file into a string.
-fn<std.String*> readFile(std.String const* filename):
+fn<std.String*> readTextFile(std.String const* filename):
     var file = std.new(std.File, filename->raw(), "r")
     if file == null:
         handleMsgError("Could not open file for reading!")
