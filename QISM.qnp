@@ -4,32 +4,53 @@
 \\   sp                  stack pointer
 \\   bp                  base pointer
 \\   ra                  return address
-\\   r0-r10              general purpose registers
+\\   r0-r7               general purpose registers
+\\   rinp                input register
+\\   rssd                seven-segment-display register
+\\   rled                LED register
 
 \\ Instructions:
-\\   add [dest] [src1]* [src2]*
-\\   sub [dest] [src1]* [src2]*
-\\   and [dest] [src1]* [src2]*
-\\   or  [dest] [src1]* [src2]*
-\\   xor [dest] [src1]* [src2]*
-\\   jxx [addr]* [src]*
-\\   st  [addr]* [src]*
-\\   ld  [dest] [addr]*
-\\   lui [dest] [imm]
-\\   lli [dest] [imm]
-\\   li  [dest] [imm]
+\\   add  [dest] [src1]* [src2]*
+\\   sub  [dest] [src1]* [src2]*
+\\   and  [dest] [src1]* [src2]*
+\\   or   [dest] [src1]* [src2]*
+\\   xor  [dest] [src1]* [src2]*
+\\   shl  [dest] [src1]* [src2]*
+\\   shr  [dest] [src1]* [src2]*
+\\   jxx  [addr]* [src]*
+\\   st   [addr]* [src]*
+\\   ld   [dest] [addr]*
+\\   lui  [dest] [imm]
+\\   lli  [dest] [imm]
+\\   li   [dest] [imm]
+\\   int  [imm]
+\\
+\\  ++ Pseudo-instructions (assembled as an equivalent real instruction):
+\\   not  [dest] [src]        -- xor [dest] [src] zero(-1)
+\\   jpr  [addr]*              -- jrz [addr] zero
 \\
 \\  ++ '*' notates that one of these arguments may have an offset. Example:
 \\     add r0 r1 r2(4)
 \\
-\\  ++ 'xx' of 'jxx' is one of the following:
-\\     - '.z'    zero
-\\     - '.nz'   not zero
-\\     - '.gz'   greater than zero
-\\     - '.lz'   less than zero
-\\     - '.ge'   greater than or equal to zero
-\\     - '.le'   less than or equal to zero
-\\     Where '.' is either 'r' (relative jump) or '' (absolute jump).
+\\  ++ 'xx' of 'jxx' is one of the following, optionally prefixed with 'r' for
+\\     a PC-relative jump instead of an absolute one (e.g. 'jz' vs. 'jrz'):
+\\     - 'z'    zero
+\\     - 'nz'   not zero
+\\     - 'gz'   greater than zero
+\\     - 'lz'   less than zero
+\\     - 'ge'   greater than or equal to zero
+\\     - 'le'   less than or equal to zero
+\\
+\\  ++ Every instruction except 'lui'/'lli'/'li'/'int' accepts an optional
+\\     operand-size suffix, one of '.b' (byte), '.h' (half), '.w' (word,
+\\     default) or '.d' (dword). Example: add.b r0 r1 r2
+\\
+\\ Literals (immediates and offsets):
+\\   123, 0x7B, 0b1111011, 0173    decimal / hex / binary / octal
+\\   upr <label>                   upper 16 bits of a label's address
+\\   lwr <label>                   lower 16 bits of a label's address
+\\   rel <label>                   label's address relative to the current instruction
+\\   sts "text"                    each character converted to a seven-segment display pattern
 \\
 \\ Comments:
 \\   ~~ comment
@@ -37,8 +58,15 @@
 \\ Labels:
 \\  ::label
 \\
-\\ Entry Point:
-\\  .entry <label>
+\\ Output formats (-f=):
+\\   bin      raw binary (default)
+\\   bintxt   one instruction per line, as underscore-separated binary bytes
+\\   hextxt   one instruction per line, as underscore-separated hex bytes
+\\
+\\ Disassembly (-d) reads a 'bin' file and writes back the literal canonical
+\\ encoding of each instruction (real mnemonics and numeric literals only --
+\\ it does not reconstruct labels or pseudo-instructions like 'not'/'jpr').
+\\ -f= is ignored; disassembly output is always assembly text.
 
 import "memory.qnp"
 import "string.qnp"
@@ -46,7 +74,7 @@ import "stdio.qnp"
 import "system.qnp"
 import "fileio.qnp"
 import "assembler.qnp"
-\\import "disassembler.qnp"
+import "disassembler.qnp"
 import "filereader.qnp"
 import "filewriter.qnp"
 
@@ -66,8 +94,7 @@ fn<> printHelp():
     std.println("                       default: bin")
     std.println("                       options: bintxt, hextxt")
     std.println("  -a                  add annotations to output file (ignored with -d)")
-    std.println("  -d                  disassembly mode")
-    std.println("                       ignored if output format is bin")
+    std.println("  -d                  disassembly mode (-f= is ignored)")
 
 \\ Option variables
 var<std.String*> inputFilename = null
@@ -164,30 +191,63 @@ if codeText == null:
     std.delete(outputFilename)
     std.exit(1)
 
-if verbose: std.println("Assembling...")
-var<AssemblerData> asmData
-asmData.filename = inputFilename
-asmData.code = codeText
-asmData.verbose = verbose
-asmData.addAnnotations = addAnnotations
+if operationMode == OperationMode.Assemble:
+    if verbose: std.println("Assembling...")
+    var<AssemblerData> asmData
+    asmData.filename = inputFilename
+    asmData.code = codeText
+    asmData.verbose = verbose
+    asmData.addAnnotations = addAnnotations
 
-assemble(&asmData)
+    if !assemble(&asmData):
+        std.delete(codeText)
+        std.delete(inputFilename)
+        std.delete(outputFilename)
+        freeAsmData(&asmData)
+        std.exit(1)
 
-if verbose: std.println("Writing output file...")
-if !writeToFile(outputFilename, &asmData, dataFormat):
+    if verbose: std.println("Writing output file...")
+    if !writeToFile(outputFilename, &asmData, dataFormat):
+        std.delete(codeText)
+        std.delete(inputFilename)
+        std.delete(outputFilename)
+        freeAsmData(&asmData)
+        std.exit(1)
+
+    \\ Cleanup
+    if verbose: std.println("Cleaning up...")
     std.delete(codeText)
     std.delete(inputFilename)
     std.delete(outputFilename)
     freeAsmData(&asmData)
-    std.exit(1)
+else:
+    if verbose: std.println("Disassembling...")
+    var<DisassemblerData> disasmData
+    disasmData.filename = inputFilename
+    disasmData.code = codeText
+    disasmData.verbose = verbose
 
+    if !disassemble(&disasmData):
+        std.delete(codeText)
+        std.delete(inputFilename)
+        std.delete(outputFilename)
+        freeDisasmData(&disasmData)
+        std.exit(1)
 
-\\ Cleanup
-if verbose: std.println("Cleaning up...")
-std.free(codeText)
-std.delete(inputFilename)
-std.delete(outputFilename)
-freeAsmData(&asmData)
+    if verbose: std.println("Writing output file...")
+    if !writeTextFile(outputFilename, disasmData.output):
+        std.delete(codeText)
+        std.delete(inputFilename)
+        std.delete(outputFilename)
+        freeDisasmData(&disasmData)
+        std.exit(1)
+
+    \\ Cleanup
+    if verbose: std.println("Cleaning up...")
+    std.delete(codeText)
+    std.delete(inputFilename)
+    std.delete(outputFilename)
+    freeDisasmData(&disasmData)
 
 if verbose: std.println("Done!")
 std.exit(0)

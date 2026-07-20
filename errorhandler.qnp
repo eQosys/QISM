@@ -10,13 +10,11 @@ fn<bool> handleMsgError(u8 const* message, ...):
     std.println(message, ...)
     return false
 
-fn<u32*> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column, u32* instructions):
+fn<bool> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column):
     std.println("error: %:%:%: %", filename->raw(), line, column, message)
-    std.free(instructions)
-    return null
+    return false
 
-fn<u32*> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column, u32* instructions, ...):
+fn<bool> handleAsmError(u8 const* message, std.String const* filename, u64 line, u64 column, ...):
     std.print("error: %:%:%: ", filename->raw(), line, column)
     std.println(message, ...)
-    std.free(instructions)
-    return null
+    return false

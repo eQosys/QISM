@@ -47,6 +47,20 @@ fn<u64> genInstructionBuffer(u8* buffer, u32 instruction, DataFormat dataFormat)
     handleMsgError("Invalid output format!")
     return 0
 
+fn<bool> writeTextFile(std.String const* filename, std.String const* text) nodiscard:
+    var file = std.new(std.File, filename->raw(), "w")
+    if file == null:
+        return handleMsgError("Could not open output file for writing!")
+
+    var textLength = text->length()
+    if file->write(text->raw(), textLength) != textLength:
+        std.delete(file)
+        return handleMsgError("Could not write to output file!")
+
+    std.delete(file)
+
+    return true
+
 fn<bool> writeToFile(std.String const* filename, AssemblerData const* data, DataFormat dataFormat):
     var file = std.new(std.File, filename->raw(), "w")
     if file == null:

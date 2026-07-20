@@ -39,6 +39,7 @@ pack AssemblerData:
 
 fn<> freeAsmData(AssemblerData* data):
     std.free(data->instructions)
+    std.free(data->parityInstructions)
     if data->annotations != null:
         var i = 0
         while i < data->nInstructions:
@@ -58,8 +59,8 @@ fn<u64> lineCount(std.String const* code) nodiscard:
 
 fn<u32> widthToMask(AssemblerData* data, u32 width) nodiscard:
     if width == 0 || width > 32:
-        handleAsmError("(internal): invalid width!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("(internal): invalid width!", data->filename, data->line, data->column)
+        return 0
 
     var<u32> mask = 0
     while width-- != 0:
@@ -68,15 +69,17 @@ fn<u32> widthToMask(AssemblerData* data, u32 width) nodiscard:
 
 fn<> writeInsPart(AssemblerData* data, ?T part, u32 offset, u32 width):
     var<u32> mask = widthToMask(data, width)
+    if !mask: return
+
     var<u32> overlap = data->parityInstructions[data->nInstructions].instruction & (mask << offset)
 
     if overlap != 0:
-        handleAsmError("(internal): instruction bit overlap! (overlap: %b+8f0 %b+8f0 %b+8f0 %b+8f0)", data->filename, data->line, data->column, data->instructions, (overlap >> 24) & 0xFF, (overlap >> 16) & 0xFF, (overlap >> 8) & 0xFF, overlap & 0xFF)
-        std.exit(1)
+        handleAsmError("(internal): instruction bit overlap! (overlap: %b+8f0 %b+8f0 %b+8f0 %b+8f0)", data->filename, data->line, data->column, (overlap >> 24) & 0xFF, (overlap >> 16) & 0xFF, (overlap >> 8) & 0xFF, overlap & 0xFF)
+        return
 
     var rawPart = (u32)part
     var writablePart = (rawPart & mask) << offset
-    
+
     var instr = data->instructions[data->nInstructions]
     instr &= ~(mask << offset)
     instr |= writablePart
@@ -91,15 +94,15 @@ fn<> writeInsRegDest(AssemblerData* data, RegID rid):
 
 fn<> writeInsJmpCondition(AssemblerData* data, CondID cid):
     if cid == CondID.none:
-        handleAsmError("unknown condition!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("unknown condition!", data->filename, data->line, data->column)
+        return
 
     writeInsPart(data, cid, INS_JMP_COND_OFFSET, INS_JMP_COND_WIDTH)
 
 fn<> writeInsOpSize(AssemblerData* data, OpSize ops):
     if ops == OpSize.none:
-        handleAsmError("unknown operand size!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("unknown operand size!", data->filename, data->line, data->column)
+        return
 
     writeInsPart(data, ops, INS_OP_SIZE_OFFSET, INS_OP_SIZE_WIDTH)
 
@@ -115,8 +118,8 @@ fn<> writeInsOffset(AssemblerData* data, i32 offset, OffsetType ot):
         writeInsPart(data, offset, INS_OFF_LONG_SPLIT_LWR_OFFSET, INS_OFF_LONG_SPLIT_LWR_WIDTH)
         writeInsPart(data, offset >> 4, INS_OFF_LONG_SPLIT_UPR_OFFSET, INS_OFF_LONG_SPLIT_UPR_WIDTH)
     else:
-        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, data->instructions, (i32)ot)
-        std.exit(1)
+        handleAsmError("unknown offset type %!", data->filename, data->line, data->column, (i32)ot)
+        return
 
 fn<> writeInsAutoFillOffset(AssemblerData* data, ArgParseData const* apd):
     if apd->offsetAlreadyUsed:
@@ -192,27 +195,23 @@ fn<std.String*> parseAlNum(AssemblerData* data, bool allowNegative) nodiscard:
 fn<bool> parseLabel(AssemblerData* data) nodiscard:
     if !parseExact(data, ":"):
         return false
-    
+
     if !parseExact(data, ":"):
-        handleAsmError("expected ':' after ':'!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected ':' after ':'!", data->filename, data->line, data->column)
 
     var name = parseAlNum(data, false)
 
     if name->length() == 0:
-        handleAsmError("expected label name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected label name!", data->filename, data->line, data->column)
 
     parseWhitespace(data)
     if !parseNewline(data):
-        handleAsmError("expected newline after label name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected newline after label name!", data->filename, data->line, data->column)
 
     var<u32> address = data->nInstructions * 4
 
     if data->labels->contains(name):
-        handleAsmError("label '%' already defined!", data->filename, data->line, data->column, data->instructions, name->raw())
-        std.exit(1)
+        return handleAsmError("label '%' already defined!", data->filename, data->line, data->column, name->raw())
 
     data->labels->insert(name, (void*)address)
 
@@ -250,15 +249,15 @@ fn<OpSize> parseOpSize(AssemblerData* data) nodiscard:
     elif parseExact(data, "d"):
         return OpSize.dword
     else:
-        handleAsmError("expected 'b', 'h', 'w' or 'd' after '.'!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected 'b', 'h', 'w' or 'd' after '.'!", data->filename, data->line, data->column)
+        return OpSize.none
 
     return OpSize.none
 
 fn<> parseReg(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
-        handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("Expected whitespace before register name!", data->filename, data->line, data->column)
+        return
 
     var name = parseAlNum(data, false)
 
@@ -266,8 +265,8 @@ fn<> parseReg(AssemblerData* data, ArgParseData* apd):
     std.delete(name)
 
     if apd->register == RegID.none:
-        handleAsmError("expected register name!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected register name!", data->filename, data->line, data->column)
+        return
 
     apd->hasOffset = false
 
@@ -290,36 +289,36 @@ fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
         litInfo->mode = LiteralMode.Upper
         std.delete(str)
         if !parseWhitespace(data):
-            handleAsmError("expected whitespace after 'upr'!", data->filename, data->line, data->column, data->instructions)
-            std.exit(1)
+            handleAsmError("expected whitespace after 'upr'!", data->filename, data->line, data->column)
+            return
         str = parseAlNum(data, true)
     elif str->equals("lwr"):
         litInfo->mode = LiteralMode.Lower
         std.delete(str)
         if !parseWhitespace(data):
-            handleAsmError("expected whitespace after 'lwr'!", data->filename, data->line, data->column, data->instructions)
-            std.exit(1)
+            handleAsmError("expected whitespace after 'lwr'!", data->filename, data->line, data->column)
+            return
         str = parseAlNum(data, true)
     elif str->equals("rel"):
         litInfo->mode = LiteralMode.Relative
         std.delete(str)
         if !parseWhitespace(data):
-            handleAsmError("expected whitespace after 'rel'!", data->filename, data->line, data->column, data->instructions)
-            std.exit(1)
+            handleAsmError("expected whitespace after 'rel'!", data->filename, data->line, data->column)
+            return
         str = parseAlNum(data, true)
     elif str->equals("sts"):
         std.delete(str)
         litInfo->mode = LiteralMode.Default
         parseWhitespace(data)
         if !parseExact(data, "\""):
-            handleAsmError("expected '\"' after 'sts'!", data->filename, data->line, data->column, data->instructions)
-            std.exit(1)
+            handleAsmError("expected '\"' after 'sts'!", data->filename, data->line, data->column)
+            return
         var strLit = std.new(std.String)
         while !parseExact(data, "\""):
             strLit->push_back(data->code->at(data->codeIndex))
             if ++data->codeIndex >= data->codeLength:
-                handleAsmError("expected '\"' after string literal!", data->filename, data->line, data->column, data->instructions)
-                std.exit(1)
+                handleAsmError("expected '\"' after string literal!", data->filename, data->line, data->column)
+                return
 
         str = std.new(std.String, "0b")
 
@@ -327,13 +326,16 @@ fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
         while i < strLit->length():
             var part = stringToSevenSegment(strLit->at(i))
             if part == null:
-                handleAsmError("unable to convert '%' to seven segment format!", data->filename, data->line, data->column, data->instructions, strLit->at(i))
+                handleAsmError("unable to convert '%' to seven segment format!", data->filename, data->line, data->column, strLit->at(i))
+                return
             str->append(part)
             ++i
 
+        std.delete(strLit)
+
     if str->length() == 0:
-        handleAsmError("expected literal!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected literal!", data->filename, data->line, data->column)
+        return
     elif std.isalpha(str->at(0)):
         litInfo->label = str
     else:
@@ -349,8 +351,10 @@ fn<> parseLiteral(AssemblerData* data, LiteralInsertMode lim):
             litInfo->value = std.stoi(str->raw(), 10)
 
         if std.error.get() != std.error.ID.Success:
-            handleAsmError("invalid literal '%'", data->filename, data->line, data->column, data->instructions, str->raw())
-            std.exit(1)
+            handleAsmError("invalid literal '%'", data->filename, data->line, data->column, str->raw())
+            return
+
+        std.delete(str)
 
     data->literals->push_back(litInfo)
 
@@ -362,18 +366,18 @@ fn<> parseRegOffset(AssemblerData* data, ArgParseData* apd):
         return
 
     if apd->offsetAlreadyUsed:
-        handleAsmError("instructions may not have more than one offset specified!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("instructions may not have more than one offset specified!", data->filename, data->line, data->column)
+        return
 
     apd->offsetAlreadyUsed = true
     apd->hasOffset = true
     parseLiteral(data, litInsModeFromOffsetType(apd->offsetType))
 
     if !parseExact(data, ")"):
-        handleAsmError("expected ')' after offset!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected ')' after offset!", data->filename, data->line, data->column)
+        return
 
-fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic, OpSize ops):
+fn<> parseInstructionThreeArg(AssemblerData* data, OpSize ops):
     var<ArgParseData> apd
     apd.offsetType = OffsetType.short
     apd.register = RegID.none
@@ -384,7 +388,7 @@ fn<> parseInstructionThreeArg(AssemblerData* data, InsCode ic, OpSize ops):
 
     parseReg(data, &apd)
     writeInsRegDest(data, apd.register)
-    
+
     parseRegOffset(data, &apd)
     writeInsRegSrc1(data, &apd)
 
@@ -412,7 +416,7 @@ fn<> parseInstructionCondBranch(AssemblerData* data, InsCode ic, OpSize ops):
 
     writeInsAutoFillOffset(data, &apd)
 
-fn<> parseInstructionMemRead(AssemblerData* data, InsCode ic, OpSize ops):
+fn<> parseInstructionMemRead(AssemblerData* data, OpSize ops):
     var<ArgParseData> apd
     apd.offsetType = OffsetType.longContinuous
     apd.register = RegID.none
@@ -429,7 +433,7 @@ fn<> parseInstructionMemRead(AssemblerData* data, InsCode ic, OpSize ops):
 
     writeInsAutoFillOffset(data, &apd)
 
-fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic, OpSize ops):
+fn<> parseInstructionMemWrite(AssemblerData* data, OpSize ops):
     var<ArgParseData> apd
     apd.offsetType = OffsetType.longSplit
     apd.register = RegID.none
@@ -437,10 +441,10 @@ fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic, OpSize ops):
     apd.offsetAlreadyUsed = false
 
     writeInsOpSize(data, ops)
-    
+
     parseRegOffset(data, &apd)
     writeInsRegSrc1(data, &apd)
-    
+
     parseRegOffset(data, &apd)
     writeInsRegSrc2(data, &apd)
 
@@ -448,14 +452,14 @@ fn<> parseInstructionMemWrite(AssemblerData* data, InsCode ic, OpSize ops):
 
 fn<> parseImmediateFull(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
-        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column)
+        return
     parseLiteral(data, LiteralInsertMode.immLong)
 
 fn<> parseImmediatePartial(AssemblerData* data, ArgParseData* apd):
     if !parseWhitespace(data):
-        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("expected whitespace before immediate!", data->filename, data->line, data->column)
+        return
     parseLiteral(data, LiteralInsertMode.immShort)
 
 fn<> parseInstructionImmLoadFull(AssemblerData* data, InsCode ic):
@@ -463,18 +467,63 @@ fn<> parseInstructionImmLoadFull(AssemblerData* data, InsCode ic):
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
-    
-    parseReg(data, &apd)
-    writeInsRegDest(data, apd.register)
+
+    if ic == InsCode.int:
+        writeInsRegDest(data, RegID.zero)
+    else:
+        parseReg(data, &apd)
+        writeInsRegDest(data, apd.register)
 
     parseImmediateFull(data, &apd)
 
-fn<> parseInstructionImmLoadPartial(AssemblerData* data, InsCode ic):
+fn<> parseInstructionNot(AssemblerData* data, OpSize ops):
+    var<ArgParseData> apd
+    apd.offsetType = OffsetType.short
+    apd.register = RegID.none
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+
+    writeInsOpCode(data, OpCode.xor)
+    writeInsOpSize(data, ops)
+
+    parseReg(data, &apd)
+    writeInsRegDest(data, apd.register)
+
+    parseReg(data, &apd)
+    writeInsRegSrc1(data, &apd)
+
+    apd.register = RegID.zero
+    apd.hasOffset = true
+    apd.offsetAlreadyUsed = true
+    writeInsRegSrc2(data, &apd)
+    writeInsOffset(data, -1, OffsetType.short)
+
+fn<> parseInstructionJpr(AssemblerData* data, OpSize ops):
+    var<ArgParseData> apd
+    apd.offsetType = OffsetType.short
+    apd.register = RegID.none
+    apd.hasOffset = false
+    apd.offsetAlreadyUsed = false
+
+    writeInsOpCode(data, OpCode.jrx)
+    writeInsOpSize(data, ops)
+    writeInsJmpCondition(data, CondID.z)
+
+    parseRegOffset(data, &apd)
+    writeInsRegSrc1(data, &apd)
+
+    apd.register = RegID.zero
+    apd.hasOffset = false
+    writeInsRegSrc2(data, &apd)
+
+    writeInsAutoFillOffset(data, &apd)
+
+fn<> parseInstructionImmLoadPartial(AssemblerData* data):
     var<ArgParseData> apd
     apd.register = RegID.none
     apd.hasOffset = false
     apd.offsetAlreadyUsed = false
-    
+
     parseReg(data, &apd)
     writeInsRegDest(data, apd.register)
 
@@ -495,28 +544,32 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     if opSize == OpSize.none:
         opSize = OpSize.word
 
-    var opCode = opCodeFromInsCode(insCode)
     data->parityInstructions[data->nInstructions].line = data->line
     data->parityInstructions[data->nInstructions].instruction = 0
 
-    writeInsOpCode(data, opCode)
-
-    var insType = insTypeFromOpCode(opCode)
-    if insType == InsType.threeArg:
-        parseInstructionThreeArg(data, insCode, opSize)
-    elif insType == InsType.condBranch:
-        parseInstructionCondBranch(data, insCode, opSize)
-    elif insType == InsType.memRead:
-        parseInstructionMemRead(data, insCode, opSize)
-    elif insType == InsType.memWrite:
-        parseInstructionMemWrite(data, insCode, opSize)
-    elif insType == InsType.immLoadFull:
-        parseInstructionImmLoadFull(data, insCode)
-    elif insType == InsType.immLoadLower || insType == InsType.immLoadUpper:
-        parseInstructionImmLoadPartial(data, insCode)
+    if insCode == InsCode.not:
+        parseInstructionNot(data, opSize)
+    elif insCode == InsCode.jpr:
+        parseInstructionJpr(data, opSize)
     else:
-        handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        var opCode = opCodeFromInsCode(insCode)
+        writeInsOpCode(data, opCode)
+
+        var insType = insTypeFromOpCode(opCode)
+        if insType == InsType.threeArg:
+            parseInstructionThreeArg(data, opSize)
+        elif insType == InsType.condBranch:
+            parseInstructionCondBranch(data, insCode, opSize)
+        elif insType == InsType.memRead:
+            parseInstructionMemRead(data, opSize)
+        elif insType == InsType.memWrite:
+            parseInstructionMemWrite(data, opSize)
+        elif insType == InsType.immLoadFull:
+            parseInstructionImmLoadFull(data, insCode)
+        elif insType == InsType.immLoadLower || insType == InsType.immLoadUpper:
+            parseInstructionImmLoadPartial(data)
+        else:
+            return handleAsmError("(internal): instruction type not implemented!", data->filename, data->line, data->column)
 
     var<u64> lineEnd = data->codeIndex
 
@@ -525,8 +578,7 @@ fn<bool> parseInstruction(AssemblerData* data) nodiscard:
     ++data->nInstructions
 
     if !parseNewline(data):
-        handleAsmError("expected newline after instruction", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected newline after instruction", data->filename, data->line, data->column)
 
     return true
 
@@ -535,16 +587,14 @@ fn<bool> parseComment(AssemblerData* data) nodiscard:
         return false
 
     if !parseExact(data, "~"):
-        handleAsmError("expected '~' after '~'!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected '~' after '~'!", data->filename, data->line, data->column)
 
     while data->code->at(data->codeIndex) != '\n':
         ++data->codeIndex
         ++data->column
 
     if !parseNewline(data):
-        handleAsmError("expected newline after comment", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        return handleAsmError("expected newline after comment", data->filename, data->line, data->column)
 
     return true
 
@@ -566,13 +616,13 @@ fn<> checkLiteralRange(i32 value, LiteralInsertMode lim, AssemblerData* data, u3
         minVal = -std.pow(2, INS_OFF_LONG_CONT_WIDTH - 1)
         maxVal =  std.pow(2, INS_OFF_LONG_CONT_WIDTH - 1) - 1
     else:
-        handleAsmError("(internal): literal insert mode not implemented!", data->filename, line, column, data->instructions)
-        std.exit(1)
+        handleAsmError("(internal): literal insert mode not implemented!", data->filename, line, column)
+        return
 
 
     if value < minVal || value > maxVal:
-        handleAsmError("literal value '%' out of range (% to %)", data->filename, line, column, data->instructions, value, minVal, maxVal)
-        std.exit(1)
+        handleAsmError("literal value '%' out of range (% to %)", data->filename, line, column, value, minVal, maxVal)
+        return
 
 fn<i32> extendLiteralValue(AssemblerData* data, i32 val, LiteralInsertMode lim) nodiscard:
     var<u32> mask
@@ -591,15 +641,15 @@ fn<i32> extendLiteralValue(AssemblerData* data, i32 val, LiteralInsertMode lim) 
         mask = ~widthToMask(data, INS_OFF_LONG_CONT_WIDTH)
         msb  =  INS_OFF_LONG_CONT_WIDTH - 1
     else:
-        handleAsmError("(internal): literal insert mode not implemented!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+        handleAsmError("(internal): literal insert mode not implemented!", data->filename, data->line, data->column)
+        return 0
 
     var allZeroes = (val & mask) == 0
     var msbIsSet = ((val >> msb) & 1) == 1
 
     if allZeroes && msbIsSet:
         val |= mask
-    
+
     return val
 
 
@@ -618,8 +668,9 @@ fn<> insertLiterals(AssemblerData* data):
             if data->labels->contains(litInfo->label):
                 value = (i32)data->labels->get(litInfo->label)
             else:
-                handleAsmError("label '%' not found", data->filename, data->line, data->column, data->instructions, litInfo->label->raw())
-                std.exit(1)
+                handleAsmError("label '%' not found", data->filename, data->line, data->column, litInfo->label->raw())
+                std.delete(litInfo)
+                return
 
         if litInfo->mode == LiteralMode.Upper:
             value = (value >> 16) & 0xFFFF
@@ -639,7 +690,7 @@ fn<> insertLiterals(AssemblerData* data):
         else:
             writeInsOffset(data, value, offsetTypeFromLitInsMode(litInfo->insertMode))
 
-        std.free(litInfo)
+        std.delete(litInfo)
 
     std.delete(data->literals)
     data->nInstructions = nInstructionsBackup
@@ -650,18 +701,18 @@ fn<> checkParity(AssemblerData* data):
     while i < data->nInstructions:
         var instruction = data->parityInstructions[i].instruction
         if instruction != 0xFFFFFFFF:
-            handleAsmError("(internal): parity bit mismatch! (%b+8f0 %b+8f0 %b+8f0 %b+8f0 -- 0 indicates unset bit)", data->filename, data->parityInstructions[i].line, 1, data->instructions, (instruction >> 24) & 0xFF, (instruction >> 16) & 0xFF, (instruction >> 8) & 0xFF, instruction & 0xFF)
-            std.exit(1)
+            handleAsmError("(internal): parity bit mismatch! (%b+8f0 %b+8f0 %b+8f0 %b+8f0 -- 0 indicates unset bit)", data->filename, data->parityInstructions[i].line, 1, (instruction >> 24) & 0xFF, (instruction >> 16) & 0xFF, (instruction >> 8) & 0xFF, instruction & 0xFF)
+            return
         ++i
-    std.free(data->parityInstructions)
 
-fn<> assemble(AssemblerData* data):
+fn<bool> assemble(AssemblerData* data) nodiscard:
     data->line = 1
     data->column = 1
     data->codeIndex = 0
     data->codeLength = data->code->length()
     data->nInstructions = 0
     data->instructions = null
+    data->parityInstructions = null
     data->annotations = null
     data->labels = std.new(std.Map, \
         lambda<bool>(void const* a, void const* b): \
@@ -678,23 +729,20 @@ fn<> assemble(AssemblerData* data):
     if data->verbose: std.println("  info: allocating % bytes of instruction memory...", instrBuffSize)
     data->instructions = (u32*)std.malloc(instrBuffSize)
     if data->instructions == null:
-        handleMsgError("failed to allocate instruction memory")
-        std.exit(1)
+        return handleMsgError("failed to allocate instruction memory")
 
     var parityBuffSize = lc * sizeof(ParityInstruction)
     if data->verbose: std.println("  info: allocating % bytes of parity instruction memory...", parityBuffSize)
     data->parityInstructions = (ParityInstruction*)std.malloc(parityBuffSize)
     if data->parityInstructions == null:
-        handleMsgError("failed to allocate parity instruction memory")
-        std.exit(1)
+        return handleMsgError("failed to allocate parity instruction memory")
 
     if data->addAnnotations:
         var annotBuffSize = lc * sizeof(std.String*)
         if data->verbose: std.println("  info: allocating % bytes of annotation memory...", annotBuffSize)
         data->annotations = (std.String**)std.malloc(annotBuffSize)
         if data->annotations == null:
-            handleMsgError("failed to allocate instruction line memory")
-            std.exit(1)
+            return handleMsgError("failed to allocate instruction line memory")
 
     while data->codeIndex < data->codeLength:
         parseWhitespace(data)
@@ -703,9 +751,8 @@ fn<> assemble(AssemblerData* data):
         if parseLabel(data): continue
         if parseInstruction(data): continue
         if parseComment(data): continue
-        
-        handleAsmError("unexpected character!", data->filename, data->line, data->column, data->instructions)
-        std.exit(1)
+
+        return handleAsmError("unexpected character!", data->filename, data->line, data->column)
 
     if data->verbose: std.println("  info: # of instructions: %", data->nInstructions)
 
@@ -714,3 +761,5 @@ fn<> assemble(AssemblerData* data):
 
     if data->verbose: std.println("  info: checking parity...")
     checkParity(data)
+
+    return true

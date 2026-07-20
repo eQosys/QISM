@@ -245,16 +245,18 @@ fn<OpCode> opCodeFromInsCode(InsCode ic) nodiscard:
     if ic == InsCode.shr: return OpCode.shr
     if ic == InsCode.jz || ic == InsCode.jnz || \
         ic == InsCode.jgz || ic == InsCode.jlz || \
-        ic == InsCode.jge || ic == InsCode.jle || \
-        ic == InsCode.jrz || ic == InsCode.jrnz || \
+        ic == InsCode.jge || ic == InsCode.jle:
+        return OpCode.jxx
+    if ic == InsCode.jrz || ic == InsCode.jrnz || \
         ic == InsCode.jrgz || ic == InsCode.jrlz || \
         ic == InsCode.jrge || ic == InsCode.jrle:
-        return OpCode.jxx
+        return OpCode.jrx
     if ic == InsCode.st: return OpCode.st
     if ic == InsCode.ld: return OpCode.ld
     if ic == InsCode.lui: return OpCode.lui
     if ic == InsCode.lli: return OpCode.lli
     if ic == InsCode.li: return OpCode.li
+    if ic == InsCode.int: return OpCode.int
     return OpCode.none
 
 fn<InsCode> insCodeFromOpCodeAndCond(OpCode oc, CondID cid) nodiscard:
@@ -273,6 +275,14 @@ fn<InsCode> insCodeFromOpCodeAndCond(OpCode oc, CondID cid) nodiscard:
         if cid == CondID.ge: return InsCode.jge
         if cid == CondID.le: return InsCode.jle
         return InsCode.none
+    if oc == OpCode.jrx:
+        if cid == CondID.z: return InsCode.jrz
+        if cid == CondID.nz: return InsCode.jrnz
+        if cid == CondID.gz: return InsCode.jrgz
+        if cid == CondID.lz: return InsCode.jrlz
+        if cid == CondID.ge: return InsCode.jrge
+        if cid == CondID.le: return InsCode.jrle
+        return InsCode.none
     if oc == OpCode.st: return InsCode.st
     if oc == OpCode.ld: return InsCode.ld
     if oc == OpCode.lui: return InsCode.lui
@@ -286,7 +296,7 @@ fn<InsType> insTypeFromOpCode(OpCode oc) nodiscard:
         oc == OpCode.and || oc == OpCode.or || oc == OpCode.xor || \
         oc == OpCode.shl || oc == OpCode.shr:
         return InsType.threeArg
-    if oc == OpCode.jxx:
+    if oc == OpCode.jxx || oc == OpCode.jrx:
         return InsType.condBranch
     if oc == OpCode.st:
         return InsType.memWrite
@@ -357,4 +367,10 @@ fn<CondID> conditionFromInsCode(InsCode ic) nodiscard:
     return CondID.none
 
 fn<OffsetType> offsetTypeFromInsType(InsType it) nodiscard:
+    if it == InsType.threeArg || it == InsType.condBranch:
+        return OffsetType.short
+    if it == InsType.memRead:
+        return OffsetType.longContinuous
+    if it == InsType.memWrite:
+        return OffsetType.longSplit
     return OffsetType.none

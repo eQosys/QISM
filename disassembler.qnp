@@ -1,142 +1,248 @@
 import "string.qnp"
+import "stdio.qnp"
 
 import "errorhandler.qnp"
 import "instructionHelpers.qnp"
 
-fn<u32> readInsPart(u32 instruction, u32 mask, u32 offset):
-    return (instruction >> offset) & mask
+pack DisassemblerData:
+    var<std.String const*> code
+    var<std.String const*> filename
+    var<bool> verbose
+    var<u64> nInstructions
+    var<std.String*> output
 
-fn<OpCode> readInsOpCode(u32 instruction):
-    return (OpCode)readInsPart(instruction, 0b11111, 0)
+fn<> freeDisasmData(DisassemblerData* data):
+    std.delete(data->output)
 
-fn<RegID> readInsDestReg(u32 instruction):
-    return (RegID)readInsPart(instruction, 0b1111, 5)
+fn<u32> maskFromWidth(u32 width) nodiscard:
+    var<u32> mask = 0
+    while width-- != 0:
+        mask = (mask << 1) | 1
+    return mask
 
-fn<CondID> readInsCondition(u32 instruction):
-    return (CondID)readInsPart(instruction, 0b1111, 5)
+fn<u32> readInsPart(u32 instruction, u32 offset, u32 width) nodiscard:
+    return (instruction >> offset) & maskFromWidth(width)
 
-fn<bool> readInsOffsetSelect(u32 instruction):
-    return readInsPart(instruction, 0b1, 9)
+fn<i32> signExtend(u32 value, u32 width) nodiscard:
+    var<u32> mask = ~maskFromWidth(width)
+    var<u32> msb = width - 1
+    var msbIsSet = ((value >> msb) & 1) == 1
+    if msbIsSet:
+        value |= mask
+    return (i32)value
 
-fn<i32> readInsOffset(u32 instruction, OffsetType ot):
-    var<i32> offset = 0
-    var<u32> extendMask = 0
-    var<u32> msb = 0
+fn<OpCode> readInsOpCode(u32 instruction) nodiscard:
+    return (OpCode)readInsPart(instruction, INS_OPCODE_OFFSET, INS_OPCODE_WIDTH)
 
-    if ot == OffsetType.normal:
-        offset = readInsPart(instruction, 0b11111111111111, 18)
-        extendMask = 0b11111111111111111100000000000000
-        msb = 13
-    elif ot == OffsetType.short:
-        offset = readInsPart(instruction, 0b1111111111111, 18)
-        extendMask = 0b11111111111111111110000000000000
-        msb = 12
+fn<RegID> readInsRegDest(u32 instruction) nodiscard:
+    return (RegID)readInsPart(instruction, INS_REG_DEST_OFFSET, INS_REG_DEST_WIDTH)
+
+fn<CondID> readInsJmpCondition(u32 instruction) nodiscard:
+    return (CondID)readInsPart(instruction, INS_JMP_COND_OFFSET, INS_JMP_COND_WIDTH)
+
+fn<OpSize> readInsOpSize(u32 instruction) nodiscard:
+    return (OpSize)readInsPart(instruction, INS_OP_SIZE_OFFSET, INS_OP_SIZE_WIDTH)
+
+fn<bool> readInsOffsetSelect(u32 instruction) nodiscard:
+    return readInsPart(instruction, INS_OFF_SEL_OFFSET, INS_OFF_SEL_WIDTH) != 0
+
+fn<RegID> readInsRegSrc1(u32 instruction) nodiscard:
+    return (RegID)readInsPart(instruction, INS_REG_SRC1_OFFSET, INS_REG_SRC1_WIDTH)
+
+fn<RegID> readInsRegSrc2(u32 instruction) nodiscard:
+    return (RegID)readInsPart(instruction, INS_REG_SRC2_OFFSET, INS_REG_SRC2_WIDTH)
+
+fn<i32> readInsImmLong(u32 instruction) nodiscard:
+    return signExtend(readInsPart(instruction, INS_IMM_LONG_OFFSET, INS_IMM_LONG_WIDTH), INS_IMM_LONG_WIDTH)
+
+fn<u32> readInsImmShort(u32 instruction) nodiscard:
+    return readInsPart(instruction, INS_IMM_SHORT_OFFSET, INS_IMM_SHORT_WIDTH)
+
+fn<i32> readInsOffset(u32 instruction, OffsetType ot) nodiscard:
+    if ot == OffsetType.short:
+        return signExtend(readInsPart(instruction, INS_OFF_SHORT_OFFSET, INS_OFF_SHORT_WIDTH), INS_OFF_SHORT_WIDTH)
     elif ot == OffsetType.longContinuous:
-        offset = readInsPart(instruction, 0b111111111111111111, 14)
-        extendMask = 0b11111111111111000000000000000000
-        msb = 17
+        return signExtend(readInsPart(instruction, INS_OFF_LONG_CONT_OFFSET, INS_OFF_LONG_CONT_WIDTH), INS_OFF_LONG_CONT_WIDTH)
     elif ot == OffsetType.longSplit:
-        offset = readInsPart(instruction, 0b1111, 5)
-        offset |= readInsPart(instruction, 0b11111111111111, 18) << 4
-        extendMask = 0b11111111111111000000000000000000
-        msb = 17
-    else:
-        handleMsgError("Unknown OffsetType passed to function 'readInsOffset'!")
-        std.exit(1)
+        var<u32> lower = readInsPart(instruction, INS_OFF_LONG_SPLIT_LWR_OFFSET, INS_OFF_LONG_SPLIT_LWR_WIDTH)
+        var<u32> upper = readInsPart(instruction, INS_OFF_LONG_SPLIT_UPR_OFFSET, INS_OFF_LONG_SPLIT_UPR_WIDTH)
+        var<u32> combined = (upper << INS_OFF_LONG_SPLIT_LWR_WIDTH) | lower
+        return signExtend(combined, INS_OFF_LONG_SPLIT_LWR_WIDTH + INS_OFF_LONG_SPLIT_UPR_WIDTH)
 
-    var msbIsSet = (offset >> msb) & 1 == 1
+    return 0
 
-    if msbIsSet:
-        offset |= extendMask
+fn<> appendOpSize(std.String* txt, OpSize ops):
+    if ops == OpSize.byte:
+        txt->append(".b")
+    elif ops == OpSize.half:
+        txt->append(".h")
+    elif ops == OpSize.dword:
+        txt->append(".d")
+    \\ word (default) or none -> no suffix
 
-    return offset
+\\ Prints '(offset)' on whichever operand offSel points to, unless offSel == 0
+\\ and offset == 0 (the auto-fill-when-no-offset-given default). offSel == 1
+\\ never arises from auto-fill, so it is always printed when isSrc2Slot matches,
+\\ even if the value happens to be 0 -- this keeps disassembly round-trip-safe.
+fn<> appendOffset(std.String* txt, bool isSrc2Slot, bool offSel, i32 offset):
+    if offSel != isSrc2Slot:
+        return
+    if !offSel && offset == 0:
+        return
 
-fn<RegID> readInsSourceReg1(u32 instruction):
-    return (RegID)readInsPart(instruction, 0b1111, 10)
+    txt->push_back('(')
+    txt->append(std.itos((i64)offset, 10))
+    txt->push_back(')')
 
-fn<RegID> readInsSourceReg2(u32 instruction):
-    return (RegID)readInsPart(instruction, 0b1111, 14)
+fn<> disasmThreeArg(u32 instruction, InsCode ic, OffsetType ot, std.String* txt):
+    var ops = readInsOpSize(instruction)
+    var dest = readInsRegDest(instruction)
+    var src1 = readInsRegSrc1(instruction)
+    var src2 = readInsRegSrc2(instruction)
+    var offSel = readInsOffsetSelect(instruction)
+    var offset = readInsOffset(instruction, ot)
 
-fn<bool> readInsRelativeJump(u32 instruction):
-    return readInsPart(instruction, 0b1, 31)
+    txt->append(insCodeToStr(ic))
+    appendOpSize(txt, ops)
+    txt->push_back(' ')
+    txt->append(regIDToStr(dest))
+    txt->push_back(' ')
+    txt->append(regIDToStr(src1))
+    appendOffset(txt, false, offSel, offset)
+    txt->push_back(' ')
+    txt->append(regIDToStr(src2))
+    appendOffset(txt, true, offSel, offset)
 
-fn<i32> readInsImmediateFull(u32 instruction):
-    var imm = (i32)readInsPart(instruction, 0b11111111111111111111111, 9)
-    var extendMask = 0b11111111100000000000000000000000
-    var msb = 22
-    var msbIsSet = (imm >> msb) & 1 == 1
+fn<> disasmCondBranch(u32 instruction, InsCode ic, OffsetType ot, std.String* txt):
+    var ops = readInsOpSize(instruction)
+    var src1 = readInsRegSrc1(instruction)
+    var src2 = readInsRegSrc2(instruction)
+    var offSel = readInsOffsetSelect(instruction)
+    var offset = readInsOffset(instruction, ot)
 
-    if msbIsSet:
-        imm |= extendMask
+    txt->append(insCodeToStr(ic))
+    appendOpSize(txt, ops)
+    txt->push_back(' ')
+    txt->append(regIDToStr(src1))
+    appendOffset(txt, false, offSel, offset)
+    txt->push_back(' ')
+    txt->append(regIDToStr(src2))
+    appendOffset(txt, true, offSel, offset)
 
-    return imm
+fn<> disasmMemRead(u32 instruction, InsCode ic, OffsetType ot, std.String* txt):
+    var ops = readInsOpSize(instruction)
+    var dest = readInsRegDest(instruction)
+    var src1 = readInsRegSrc1(instruction)
+    var offset = readInsOffset(instruction, ot)
 
-fn<i32> readInsImmediatePartial(u32 instruction):
-    var imm = (i32)readInsPart(instruction, 0b1111111111111111, 16)
-    var extendMask = 0b11111111111111110000000000000000
-    var msb = 15
-    var msbIsSet = (imm >> msb) & 1 == 1
-
-    if msbIsSet:
-        imm |= extendMask
-
-    return imm
-
-fn<> appendOptionalOffset(std.String* txt, bool cond, bool offSel, i32 offset):
-    if (cond == offSel) && (offset != 0):
+    txt->append(insCodeToStr(ic))
+    appendOpSize(txt, ops)
+    txt->push_back(' ')
+    txt->append(regIDToStr(dest))
+    txt->push_back(' ')
+    txt->append(regIDToStr(src1))
+    if offset != 0:
         txt->push_back('(')
-        txt->append(std.itos(offset))
+        txt->append(std.itos((i64)offset, 10))
         txt->push_back(')')
 
-fn<> disasmInsThreeArg(u32 instruction, std.String* txt):
-    var opCode = readInsOpCode(instruction)
-    var destReg = readInsDestReg(instruction)
-    var srcReg1 = readInsSourceReg1(instruction)
-    var srcReg2 = readInsSourceReg2(instruction)
-
+fn<> disasmMemWrite(u32 instruction, InsCode ic, OffsetType ot, std.String* txt):
+    var ops = readInsOpSize(instruction)
+    var src1 = readInsRegSrc1(instruction)
+    var src2 = readInsRegSrc2(instruction)
     var offSel = readInsOffsetSelect(instruction)
-    var offset = readInsOffset(instruction, offsetTypeFromInsType(insTypeFromOpCode(opCode)))
+    var offset = readInsOffset(instruction, ot)
 
-    var insCode = insCodeFromOpCodeAndCond(opCode, CondID.none)
-
-    txt->append(insCodeToStr(insCode))
+    txt->append(insCodeToStr(ic))
+    appendOpSize(txt, ops)
     txt->push_back(' ')
-    txt->append(regIDToStr(destReg))
+    txt->append(regIDToStr(src1))
+    appendOffset(txt, false, offSel, offset)
     txt->push_back(' ')
-    txt->append(regIDToStr(srcReg1))
-    appendOptionalOffset(txt, false, offSel, offset)
+    txt->append(regIDToStr(src2))
+    appendOffset(txt, true, offSel, offset)
+
+fn<> disasmImmLoadPartial(u32 instruction, InsCode ic, std.String* txt):
+    var dest = readInsRegDest(instruction)
+    var imm = readInsImmShort(instruction)
+
+    txt->append(insCodeToStr(ic))
     txt->push_back(' ')
-    txt->append(regIDToStr(srcReg2))
-    appendOptionalOffset(txt, true, offSel, offset)
+    txt->append(regIDToStr(dest))
+    txt->append(" 0x")
+    txt->append(std.itos((i64)imm, 16))
 
-fn<std.String*> disasmInstruction(u32 instruction):
-    var txt = std.new(std.String)
+fn<> disasmImmLoadFull(u32 instruction, InsCode ic, std.String* txt):
+    var dest = readInsRegDest(instruction)
+    var imm = readInsImmLong(instruction)
 
-    if !txt:
-        handleMsgError("Error allocating memory for instruction string!")
-        std.exit(1)
+    txt->append(insCodeToStr(ic))
+    if ic != InsCode.int:
+        txt->push_back(' ')
+        txt->append(regIDToStr(dest))
+    txt->push_back(' ')
+    txt->append(std.itos((i64)imm, 10))
 
-    var insType = insTypeFromOpCode(readInsOpCode(instruction))
+fn<bool> disasmInstruction(u32 instruction, std.String* txt) nodiscard:
+    var opCode = readInsOpCode(instruction)
+    var insType = insTypeFromOpCode(opCode)
+    var ot = offsetTypeFromInsType(insType)
 
     if insType == InsType.threeArg:
-        disasmInsThreeArg(instruction, txt)
+        disasmThreeArg(instruction, insCodeFromOpCodeAndCond(opCode, CondID.none), ot, txt)
     elif insType == InsType.condBranch:
-        pass
-    elif insType == InsType.memWrite:
-        pass
+        var cond = readInsJmpCondition(instruction)
+        var ic = insCodeFromOpCodeAndCond(opCode, cond)
+        if ic == InsCode.none:
+            return handleMsgError("unable to disassemble instruction: unknown jump condition!")
+        disasmCondBranch(instruction, ic, ot, txt)
     elif insType == InsType.memRead:
-        pass
-    elif insType == InsType.immLoadUpper:
-        pass
-    elif insType == InsType.immLoadLower:
-        pass
+        disasmMemRead(instruction, insCodeFromOpCodeAndCond(opCode, CondID.none), ot, txt)
+    elif insType == InsType.memWrite:
+        disasmMemWrite(instruction, insCodeFromOpCodeAndCond(opCode, CondID.none), ot, txt)
+    elif insType == InsType.immLoadUpper || insType == InsType.immLoadLower:
+        disasmImmLoadPartial(instruction, insCodeFromOpCodeAndCond(opCode, CondID.none), txt)
     elif insType == InsType.immLoadFull:
-        pass
+        disasmImmLoadFull(instruction, insCodeFromOpCodeAndCond(opCode, CondID.none), txt)
     else:
-        handleMsgError("Unknown instruction type!")
-        std.exit(1)
+        \\ insTypeFromOpCode already printed an error message for this case
+        return false
 
-    return txt
+    txt->push_back('\n')
+    return true
 
-fn<> disassembleCode():
-    pass
+fn<bool> disassemble(DisassemblerData* data) nodiscard:
+    data->output = std.new(std.String)
+    data->nInstructions = 0
+
+    var<u64> fileLength = data->code->length()
+
+    if fileLength < 4 || (fileLength - 4) % 4 != 0:
+        return handleMsgError("invalid input file: not a valid QISM binary!")
+
+    var<u32> declaredSize = ((u32)data->code->at(0) << 24) | \
+                             ((u32)data->code->at(1) << 16) | \
+                             ((u32)data->code->at(2) << 8)  | \
+                              (u32)data->code->at(3)
+
+    if declaredSize != fileLength:
+        return handleMsgError("invalid input file: size header does not match file size!")
+
+    data->nInstructions = (fileLength - 4) / 4
+
+    if data->verbose: std.println("  info: % instructions found", data->nInstructions)
+
+    var<u64> i = 0
+    while i < data->nInstructions:
+        var<u64> byteOffset = 4 + i * 4
+        var<u32> instruction = ((u32)data->code->at(byteOffset)     << 24) | \
+                               ((u32)data->code->at(byteOffset + 1) << 16) | \
+                               ((u32)data->code->at(byteOffset + 2) << 8)  | \
+                                (u32)data->code->at(byteOffset + 3)
+
+        if !disasmInstruction(instruction, data->output):
+            return false
+
+        ++i
+
+    return true
